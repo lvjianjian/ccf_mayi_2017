@@ -16,11 +16,11 @@ import xgboost as xgb
 from sklearn.preprocessing import LabelEncoder
 
 
-def main():  # 每个mall 训练一个分类器
+def main(offline=False):  # 每个mall 训练一个分类器
     model_name = "xgboost"
 
     train, test = preprocess()
-    offline = False
+
     # 划分验证 测试集
     if offline:
         train, valid, test = train_split(train)
@@ -37,7 +37,7 @@ def main():  # 每个mall 训练一个分类器
     objective = "multi:softmax"
     eval_metric = "merror"
     eta = 0.02
-    max_depth = 5
+    max_depth = 10
     subsample = 1
     colsample_bytree = 1
     min_child_weight = 10
@@ -65,8 +65,8 @@ def main():  # 每个mall 训练一个分类器
     remove_f(features, "shop_latitude")
     remove_f(features, "price")
     # 为每个商场构建一个分类器
-    for _mall_id in mall_ids:
-        print "train: ", _mall_id
+    for _index, _mall_id in enumerate(mall_ids):
+        print "train: ", _mall_id, " {}/{}".format(_index, len(mall_ids))
         _train = train[train.mall_id == _mall_id]
         _valid = valid[valid.mall_id == _mall_id]
         all_shop_id = np.union1d(_train.shop_id.unique(), _valid.shop_id.unique())
@@ -137,22 +137,23 @@ def main():  # 每个mall 训练一个分类器
         print "all acc is", _acc
         result["all_acc"] = _acc
         path = "../result/offline/{}_f{}_eta{}_md{}_ss{}_csb{}_mcw{}_ga{}_al{}_la{}".format(model_name, len(features),
-                                                                                           eta, max_depth,
-                                                                                           subsample, colsample_bytree,
-                                                                                           min_child_weight, gamma,
-                                                                                           alpha, _lambda)
+                                                                                            eta, max_depth,
+                                                                                            subsample, colsample_bytree,
+                                                                                            min_child_weight, gamma,
+                                                                                            alpha, _lambda)
         save_acc(result, path, features)
     else:
         all_rowid = np.concatenate(row_ids_or_true.values())
         result = pd.DataFrame(data={"row_id": all_rowid, "shop_id": all_predict})
         result.sort_values(by="row_id", inplace=True)
         path = "../result/online/{}_f{}_eta{}_md{}_ss{}_csb{}_mcw{}_ga{}_al{}_la{}".format(model_name, len(features),
-                                                                                    eta, max_depth,
-                                                                                    subsample, colsample_bytree,
-                                                                                    min_child_weight, gamma,
-                                                                                    alpha, _lambda)
+                                                                                           eta, max_depth,
+                                                                                           subsample, colsample_bytree,
+                                                                                           min_child_weight, gamma,
+                                                                                           alpha, _lambda)
         save_result(result, path, features)
 
 
 if __name__ == '__main__':
-    main()
+    main(offline=True)
+    # main(offline=False)
