@@ -38,14 +38,14 @@ def main(offline=False):  # 每个mall 训练一个分类器
     eval_metric = "merror"
     eta = 0.02
     max_depth = 10
-    subsample = 1
-    colsample_bytree = 1
+    subsample = 0.9
+    colsample_bytree = 0.9
     min_child_weight = 10
     gamma = 1
     alpha = 0
     _lambda = 0
     n_round = 100
-    early_stop_rounds = 2
+    early_stop_rounds = 3
 
     # 特征选择
     def remove_f(features, fname):
@@ -64,6 +64,10 @@ def main(offline=False):  # 每个mall 训练一个分类器
     remove_f(features, "shop_longitude")
     remove_f(features, "shop_latitude")
     remove_f(features, "price")
+
+    print "feature size", len(features)
+    print features
+
     # 为每个商场构建一个分类器
     for _index, _mall_id in enumerate(mall_ids):
         print "train: ", _mall_id, " {}/{}".format(_index, len(mall_ids))
