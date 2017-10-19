@@ -23,11 +23,12 @@ shop_info = None
 train_info = None
 testA_info = None
 
-
-# 不同的mall 需要不同的参数 ！！！ 略尴尬，这里怎么选呢？
+# 不同的mall 需要不同的参数 ！！！ 略尴尬，这里怎么选呢？ 改变xgboost subsample 和colsample可以缓解
 global_top_wifi_sig_50 = 50  # 在选取前50不降纬作为特征
 global_top_wifi_sig_num = "shop_size_4"  # 选取的top wifi sig是shop size的4倍
 pca_component_top_wifi_sig = 15  # 对top_wifi_sig进行 pca降纬
+
+
 
 
 def acc(pred, y):
@@ -36,9 +37,10 @@ def acc(pred, y):
 
 def save_result(result_csv, path, features):
     result_csv.to_csv(path + ".csv", index=False)
-    with open(path + ".feature", "w") as f:
-        f.write(",".join(features))
-        f.flush()
+    if features is not None:
+        with open(path + ".feature", "w") as f:
+            f.write(",".join(features))
+            f.flush()
 
 
 def save_acc(result, path, features):
@@ -338,13 +340,53 @@ def rank_one(train, name):
     x1 = dict([(_x[0], _i) for _i, _x in enumerate(x1)])
     return x1
 
+
 def rank_one_by_sample_size(train, test, name):
     x1 = rank_one(train, name)
     return train[name].map(lambda x: x1[x]), test[name].map(lambda x: x1[x])
 
 
+def rank_label_by_one(train, test, label_dict, col_name, group_by_name, top=5):
+    """
+
+    :param train:
+    :param test:
+    :param label_dict:
+    :param col_name: weekday,hour,
+    :param group_by_name: shop_id,category_id
+    :return:
+    """
+    weekdays = train[col_name].unique()
+    tops = []
+    indexs = []
+    for _weekday in weekdays:
+        x1 = train[train[col_name] == _weekday].groupby(group_by_name).count()["user_id"]
+        x1 = zip(list(x1.index.values), list(x1.values))
+        x1 = sorted(x1, key=lambda x: -x[1])
+        x1 = x1[:top]
+        indexs.append(_weekday)
+        x1 = [label_dict[_x[0]] for _x in x1]
+        x1 = np.asarray(x1)
+        if x1.shape[0] < top:
+            x1 = np.concatenate([x1,np.asarray([len(label_dict) for _ in range(x1.shape[0],top)])])
+        tops.append(x1)
+    tops = np.vstack(tops)
+    indexs = np.vstack(indexs)
+    r = np.concatenate([indexs, tops], axis=1)
+    columns = [col_name] + ["top_{}_by_{}_group_by_{}".format(_i, col_name, group_by_name) for _i in range(top)]
+    df = pd.DataFrame(r, columns=columns)
+    new_train = pd.merge(train, df, on=col_name, how="left")
+    new_test = pd.merge(test, df, on=col_name, how="left")
+    columns.remove(col_name)
+    new_train.index = train.index
+    new_test.index = test.index
+    return new_train[columns], new_test[columns]
+
+
 def preprocess_time(train, test):
     mall_ids = train.mall_id.unique()
+    new_trains = []
+    new_tests = []
     for _mall_id in mall_ids:
         part_train = train[train.mall_id == _mall_id]
         part_test = test[test.mall_id == _mall_id]
@@ -358,7 +400,26 @@ def preprocess_time(train, test):
         train.loc[part_train.index, "weekday_rank_by_sample"] = rank_train
         test.loc[part_test.index, "weekday_rank_by_sample"] = rank_test
 
-        #
+        # 按照shop 进行sample rank label
+        label_dict = rank_one(part_train, "shop_id")
+        new_train, new_test = rank_label_by_one(part_train, part_test, label_dict, "weekday", "shop_id")
+        new_train2, new_test2 = rank_label_by_one(part_train, part_test, label_dict, "hour", "shop_id")
+        new_train = pd.concat([new_train, new_train2], axis=1)
+        new_test = pd.concat([new_test, new_test2], axis=1)
+
+        label_dict = rank_one(part_train, "category_id")
+        new_train2, new_test2 = rank_label_by_one(part_train, part_test, label_dict, "weekday", "category_id")
+        new_train = pd.concat([new_train, new_train2], axis=1)
+        new_test = pd.concat([new_test, new_test2], axis=1)
+        new_train2, new_test2 = rank_label_by_one(part_train, part_test, label_dict, "hour", "category_id")
+        new_train = pd.concat([new_train, new_train2], axis=1)
+        new_test = pd.concat([new_test, new_test2], axis=1)
+        new_trains.append(new_train)
+        new_tests.append(new_test)
+    new_train = pd.concat(new_trains)
+    new_test = pd.concat(new_tests)
+    train = pd.concat([train, new_train], axis=1)
+    test = pd.concat([test, new_test], axis=1)
 
     return train, test
 
@@ -377,7 +438,7 @@ def preprocess(mall_id=""):
     train = preprocess_basic_time(train)
     test = preprocess_basic_time(test)
 
-    train, test = preprocess_time(train, test)
+    # train, test = preprocess_time(train, test) # 效果变差
     train, test = preprocess_lonlat(train, test)
     train, test = preprocess_wifi(train, test)
 

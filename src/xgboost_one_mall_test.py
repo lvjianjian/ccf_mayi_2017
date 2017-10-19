@@ -39,14 +39,14 @@ def main(offline=False, mall_id ="m_690"):  # 每个mall 训练一个分类器
     eval_metric = "merror"
     eta = 0.02
     max_depth = 10
-    subsample = 1
-    colsample_bytree = 1
-    min_child_weight = 10
+    subsample = 0.8
+    colsample_bytree = 0.8
+    min_child_weight = 5
     gamma = 1
     alpha = 0
     _lambda = 0
     n_round = 100
-    early_stop_rounds = 2
+    early_stop_rounds = 8
 
     # 特征选择
     def remove_f(features, fname):
