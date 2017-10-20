@@ -72,7 +72,7 @@ def main(offline):
         alpha = 0
         _lambda = 0
         n_round = 200
-        early_stop_rounds = 10
+        early_stop_rounds = 6
 
         print "train", mall_id
         bst = xgb.train({

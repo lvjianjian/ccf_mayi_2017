@@ -18,7 +18,7 @@ from sklearn.cluster import MiniBatchKMeans
 from sklearn.decomposition import PCA
 import scipy.sparse as sp
 import scipy
-
+from tsne import tsne
 shop_info = None
 train_info = None
 testA_info = None

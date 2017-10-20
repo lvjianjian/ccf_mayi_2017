@@ -46,7 +46,7 @@ def main(offline=False, mall_id ="m_690"):  # 每个mall 训练一个分类器
     alpha = 0
     _lambda = 0
     n_round = 100
-    early_stop_rounds = 8
+    early_stop_rounds = 6
 
     # 特征选择
     def remove_f(features, fname):
@@ -176,5 +176,5 @@ def main(offline=False, mall_id ="m_690"):  # 每个mall 训练一个分类器
 
 
 if __name__ == '__main__':
-    main(offline=True, mall_id="m_6803")
+    main(offline=True, mall_id="m_7800")
     # main(offline=False)
