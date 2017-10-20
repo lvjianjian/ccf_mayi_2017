@@ -82,7 +82,8 @@ def main1(mall_id): #pca
             n_round,
             evals=evals,
             early_stopping_rounds=early_stop_rounds)
-
+    p = bst.predict(test)
+    print "pca decimposition xgboost acc", acc(p,test_y)
 
 def main2(mall_id): # LDA
     train_all = load_train()
@@ -167,23 +168,20 @@ def main3(mall_id): # KNN
 
     df, train_cache, test_cache = get_wifi_cache(mall_id)
     train_matrix = train_cache[2]
-    train_matrix = train_matrix[:, :3000]
     train_x, test_x, train_y, test_y = train_test_split(train_matrix, y)
+
+
+    scala = 1
+
+    pca = PCA(n_components=int(num_class * scala)).fit(train_x)
+    train_x = pca.transform(train_x)
+    test_x = pca.transform(test_x)
 
     knn = KNeighborsClassifier().fit(train_x, train_y)
     p = knn.predict(test_x)
     print "knn acc", acc(p,test_y)
     exit(1)
-    scala = 1
-    # lda = LinearDiscriminantAnalysis(n_components=num_class).fit(np.concatenate([train_x, valid_x]), np.concatenate([train_y,valid_y]))
-    lda = LinearDiscriminantAnalysis(n_components=num_class).fit(train_x, train_y)
-    # lda.predict(test_x)
-    p = lda.predict(test_x)
 
-    print "LDA", acc(p,test_y)
-    # pca = PCA(n_components=int(num_class * scala)).fit(np.concatenate([train_x, valid_x]))
-    train_x = lda.transform(train_x)
-    test_x = lda.transform(test_x)
 
     train = xgb.DMatrix(train_x, label=train_y)
     valid = xgb.DMatrix(test_x, label=test_y)
@@ -243,23 +241,18 @@ def main4(mall_id): # SVM
 
     df, train_cache, test_cache = get_wifi_cache(mall_id)
     train_matrix = train_cache[2]
+    train_matrix = train_matrix[:, :3000]
     train_x, test_x, train_y, test_y = train_test_split(train_matrix, y)
 
-    svc = SVC().fit(train_x, train_y)
-    p = svc.predict(test_x)
-    print "svc acc", acc(p,test_y)
-    exit(1)
+
     scala = 1
-    # lda = LinearDiscriminantAnalysis(n_components=num_class).fit(np.concatenate([train_x, valid_x]), np.concatenate([train_y,valid_y]))
-    lda = LinearDiscriminantAnalysis(n_components=num_class).fit(train_x, train_y)
-    # lda.predict(test_x)
-    p = lda.predict(test_x)
-
-    print "LDA", acc(p,test_y)
-    # pca = PCA(n_components=int(num_class * scala)).fit(np.concatenate([train_x, valid_x]))
-    train_x = lda.transform(train_x)
-    test_x = lda.transform(test_x)
-
+    pca = PCA(n_components=int(num_class * scala)).fit(train_x)
+    train_x = pca.transform(train_x)
+    test_x = pca.transform(test_x)
+    svc = SVC(C=10,kernel="poly").fit(train_x, train_y)
+    p = svc.predict(test_x)
+    print "svc acc", acc(p, test_y)
+    exit(1)
     train = xgb.DMatrix(train_x, label=train_y)
     valid = xgb.DMatrix(test_x, label=test_y)
     evals = [(train, "train"), (valid, "valid")]
@@ -383,7 +376,9 @@ def main5(mall_id): # t-sne
     # bst = xgb.train(params, n_round=bst.best_iteration )
 
 
-def main_tvt(mall_id): # LDA
+
+
+def main_tvt(mall_id): # train valid test
     train_all = load_train()
     shop_info = load_shop_info()
     shops = shop_info[shop_info.mall_id == mall_id].shop_id.unique()
@@ -456,4 +451,4 @@ def main_tvt(mall_id): # LDA
 
 
 if __name__ == '__main__':
-    main3(mall_id="m_7800")  # m_6803 m_690
+    main4(mall_id="m_7800")  # m_6803 m_690
