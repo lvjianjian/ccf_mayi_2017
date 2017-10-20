@@ -18,15 +18,16 @@ from sklearn.decomposition import PCA
 import xgboost as xgb
 
 
-def main():
+def main(offline):
     model_name = "xgboost_wifi_sig"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
     mall_ids = shop_info.mall_id.unique()
-    all_predict = []
-    row_ids_or_true = []
-    for mall_id in mall_ids:
+    all_predict = {}
+    row_ids_or_true = {}
+    for _index, mall_id in enumerate(mall_ids):
+        print "train: ", mall_id, " {}/{}".format(_index, len(mall_ids))
         shops = shop_info[shop_info.mall_id == mall_id].shop_id.unique()
         num_class = len(shops)
         df, train_cache, test_cache = get_wifi_cache(mall_id)
@@ -47,11 +48,16 @@ def main():
         label_encoder = LabelEncoder().fit(shops)
         y = label_encoder.transform(train.shop_id)
 
+        if offline:
+            train_matrix, test_matrix, y, test_y = train_test_split(train_matrix, y, test_size=0.1)
         train_x, valid_x, train_y, valid_y = train_test_split(train_matrix, y)
 
         train = xgb.DMatrix(train_x, label=train_y)
         valid = xgb.DMatrix(valid_x, label=valid_y)
         evals = [(train, "train"), (valid, "valid")]
+
+        if offline:
+            test = xgb.DMatrix(test_matrix)
 
         print "num_class", num_class
         # 模型参数
@@ -88,22 +94,55 @@ def main():
                 evals=evals,
                 early_stopping_rounds=early_stop_rounds)
 
-
-
         predict = bst.predict(test, ntree_limit=bst.best_iteration).astype(int)
         predict = label_encoder.inverse_transform(predict)
-        all_predict.append(predict)
-        row_ids_or_true.append(test_index)
-    all_rowid = np.concatenate(row_ids_or_true)
-    all_predict = np.concatenate(all_predict)
-    result = pd.DataFrame(data={"row_id": all_rowid, "shop_id": all_predict})
-    result.sort_values(by="row_id", inplace=True)
-    path = "../result/online/{}_f{}_eta{}_md{}_ss{}_csb{}_mcw{}_ga{}_al{}_la{}_es".format(model_name, "num_class_{}".format(scala),
-                                                                                       eta, max_depth,
-                                                                                       subsample, colsample_bytree,
-                                                                                       min_child_weight, gamma,
-                                                                                       alpha, _lambda,early_stop_rounds)
-    save_result(result, path, None)
+        all_predict[mall_id] = predict
+        if offline:
+            test_y = label_encoder.inverse_transform(test_y)
+            row_ids_or_true[mall_id] = test_y
+        else:
+            row_ids_or_true[mall_id] = test_all[np.in1d(test_all.index, test_index)].row_id.values()
+
+    if offline:
+        result = {}
+        for _mall_id in mall_ids:
+            _acc = acc(all_predict[_mall_id], row_ids_or_true[_mall_id])
+            print _mall_id + "'s acc is", _acc
+            result[_mall_id] = _acc
+        all_rowid = row_ids_or_true.values()
+        all_predict = np.concatenate(all_predict.values())
+        all_true = np.concatenate(all_rowid)
+        _acc = acc(all_predict, all_true)
+        print "all acc is", _acc
+        result["all_acc"] = _acc
+        path = "../result/offline/{}_f{}_eta{}_md{}_ss{}_csb{}_mcw{}_ga{}_al{}_la{}_es{}".format(model_name,
+                                                                                                 "num_class_{}".format(
+                                                                                                     scala),
+                                                                                                 eta, max_depth,
+                                                                                                 subsample,
+                                                                                                 colsample_bytree,
+                                                                                                 min_child_weight,
+                                                                                                 gamma,
+                                                                                                 alpha, _lambda,
+                                                                                                 early_stop_rounds)
+        save_acc(result, path, None)
+
+    else:
+        all_rowid = np.concatenate(row_ids_or_true.values())
+        all_predict = np.concatenate(all_predict.values())
+        result = pd.DataFrame(data={"row_id": all_rowid, "shop_id": all_predict})
+        result.sort_values(by="row_id", inplace=True)
+        path = "../result/online/{}_f{}_eta{}_md{}_ss{}_csb{}_mcw{}_ga{}_al{}_la{}_es{}".format(model_name,
+                                                                                                "num_class_{}".format(
+                                                                                                    scala),
+                                                                                                eta, max_depth,
+                                                                                                subsample,
+                                                                                                colsample_bytree,
+                                                                                                min_child_weight, gamma,
+                                                                                                alpha, _lambda,
+                                                                                                early_stop_rounds)
+        save_result(result, path, None)
+
 
 if __name__ == '__main__':
-    main()
+    main(offline=True)

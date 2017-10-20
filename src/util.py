@@ -45,7 +45,8 @@ def save_result(result_csv, path, features):
 
 def save_acc(result, path, features):
     with open(path + ".feature", "w") as f:
-        f.write(",".join(features) + "\n")
+        if features is not None:
+            f.write(",".join(features) + "\n")
         for _mallid in result:
             f.write(str(_mallid) + ":" + str(result[_mallid]) + "\n")
         f.flush()
