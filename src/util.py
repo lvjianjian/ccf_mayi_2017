@@ -228,42 +228,20 @@ def preprocess_wifi(train, test):
         sorted_wifi = sorted_wifi[:shop_size * 4]
         d = rank_sorted_wifi(sorted_wifi)
 
-        # 使用的wifi在wifi_rank中的排名,若有多个使用wifi，选sig强的， 若没有使用wifi，则设置为rank_size
-        def use_wifi_rank(x, d):
-            size = len(d)
-            use_wifi = sorted(x[1], key=lambda x: -x[1])
-            if len(use_wifi) >= 1:
-                if use_wifi[0][0] in d:
-                    return d[use_wifi[0][0]]
-                else:
-                    return size
-            else:
-                return size
+        test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank = use_wifi_in_wifi_rank(_part_test, _part_train, d)
 
-        use_wifi_in_wifi_rank = _part_train.basic_wifi_info.map(lambda x: use_wifi_rank(x, d))
-        train.loc[use_wifi_in_wifi_rank.index, "use_wifi_in_wifi_rank"] = use_wifi_in_wifi_rank
-        use_wifi_in_wifi_rank = _part_test.basic_wifi_info.map(lambda x: use_wifi_rank(x, d))
-        test.loc[use_wifi_in_wifi_rank.index, "use_wifi_in_wifi_rank"] = use_wifi_in_wifi_rank
-
-        # 未使用的wifi在wifi_rank中的排名, top为信号排名中的第top个,取值0-9
-        def no_use_wifi_rank(x, d, top):
-            size = len(d)
-            use_wifi = sorted(x[2], key=lambda x: -x[1])
-            if len(use_wifi) > top:
-                if use_wifi[top][0] in d:
-                    return d[use_wifi[top][0]]
-                else:
-                    return size
-            else:
-                return size
+        train.loc[train_use_wifi_in_wifi_rank.index, "use_wifi_in_wifi_rank"] = train_use_wifi_in_wifi_rank
+        test.loc[test_use_wifi_in_wifi_rank.index, "use_wifi_in_wifi_rank"] = test_use_wifi_in_wifi_rank
 
         for _top in range(10):
-            no_use_wifi_in_wifi_rank = _part_train.basic_wifi_info.map(lambda x: no_use_wifi_rank(x, d, _top))
-            train.loc[no_use_wifi_in_wifi_rank.index, "no_use_wifi_top{}_in_wifi_rank".format(
-                    _top)] = no_use_wifi_in_wifi_rank
-            no_use_wifi_in_wifi_rank = _part_test.basic_wifi_info.map(lambda x: no_use_wifi_rank(x, d, _top))
-            test.loc[no_use_wifi_in_wifi_rank.index, "no_use_wifi_top{}_in_wifi_rank".format(
-                    _top)] = no_use_wifi_in_wifi_rank
+            test_no_use_wifi_in_wifi_rank, train_no_use_wifi_in_wifi_rank = no_use_wifi_in_wifi_rank(_part_test,
+                                                                                                     _part_train,
+                                                                                                     d,
+                                                                                                     _top)
+            train.loc[train_no_use_wifi_in_wifi_rank.index, "no_use_wifi_top{}_in_wifi_rank".format(
+                    _top)] = train_no_use_wifi_in_wifi_rank
+            test.loc[test_no_use_wifi_in_wifi_rank.index, "no_use_wifi_top{}_in_wifi_rank".format(
+                    _top)] = test_no_use_wifi_in_wifi_rank
 
         # 取wifi排名前100 ,将用户的wifi强度投射进去，不存在为-115
         df, train_wifi_cache, test_wifi_cache = get_wifi_cache(_mall_id)
@@ -333,6 +311,42 @@ def preprocess_wifi(train, test):
     train = train.drop("basic_wifi_info", axis=1)
     test = test.drop("basic_wifi_info", axis=1)
     return train, test
+
+
+def no_use_wifi_in_wifi_rank(_part_test, _part_train, d, _top):
+    # 未使用的wifi在wifi_rank中的排名, top为信号排名中的第top个,取值0-9
+    def no_use_wifi_rank(x, d, top):
+        size = len(d)
+        use_wifi = sorted(x[2], key=lambda x: -x[1])
+        if len(use_wifi) > top:
+            if use_wifi[top][0] in d:
+                return d[use_wifi[top][0]]
+            else:
+                return size
+        else:
+            return size
+
+    train_no_use_wifi_in_wifi_rank = _part_train.basic_wifi_info.map(lambda x: no_use_wifi_rank(x, d, _top))
+    test_no_use_wifi_in_wifi_rank = _part_test.basic_wifi_info.map(lambda x: no_use_wifi_rank(x, d, _top))
+    return test_no_use_wifi_in_wifi_rank, train_no_use_wifi_in_wifi_rank
+
+
+def use_wifi_in_wifi_rank(_part_test, _part_train, d):
+    # 使用的wifi在wifi_rank中的排名,若有多个使用wifi，选sig强的， 若没有使用wifi，则设置为rank_size
+    def use_wifi_rank(x, d):
+        size = len(d)
+        use_wifi = sorted(x[1], key=lambda x: -x[1])
+        if len(use_wifi) >= 1:
+            if use_wifi[0][0] in d:
+                return d[use_wifi[0][0]]
+            else:
+                return size
+        else:
+            return size
+
+    train_use_wifi_in_wifi_rank = _part_train.basic_wifi_info.map(lambda x: use_wifi_rank(x, d))
+    test_use_wifi_in_wifi_rank = _part_test.basic_wifi_info.map(lambda x: use_wifi_rank(x, d))
+    return test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank
 
 
 def rank_one(train, name):
@@ -511,7 +525,7 @@ def wifi_info2csv(datas, names):
             # !!!有wifi同名情况
 
 
-def get_wifi_cache(mall_id):
+def get_wifi_cache(mall_id, default = -115):
     df = pd.read_csv("../data/wifi_info_cache/{}_rank.csv".format(mall_id))
     train_index = scipy.load("../data/wifi_info_cache/{}_{}_index.npy".format("train", mall_id))
     test_index = scipy.load("../data/wifi_info_cache/{}_{}_index.npy".format("test", mall_id))
@@ -519,8 +533,8 @@ def get_wifi_cache(mall_id):
     test_use_wifi = scipy.load("../data/wifi_info_cache/{}_{}_use_wifi.npy".format("test", mall_id))
     train_matrix = scipy.load("../data/wifi_info_cache/{}_{}_matrix.npy".format("train", mall_id))[()].toarray()
     test_matrix = scipy.load("../data/wifi_info_cache/{}_{}_matrix.npy".format("test", mall_id))[()].toarray()
-    train_matrix[train_matrix[:] == 0] = -115
-    test_matrix[test_matrix[:] == 0] = -115
+    train_matrix[train_matrix[:] == 0] = default
+    test_matrix[test_matrix[:] == 0] = default
     return df, (train_index, train_use_wifi, train_matrix), (test_index, test_use_wifi, test_matrix)
 
 
