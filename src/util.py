@@ -18,7 +18,8 @@ from sklearn.cluster import MiniBatchKMeans
 from sklearn.decomposition import PCA
 import scipy.sparse as sp
 import scipy
-from tsne import tsne
+
+# from tsne import tsne
 shop_info = None
 train_info = None
 testA_info = None
@@ -536,6 +537,36 @@ def wifi_sig_feature_names(mall_id):
         top_wifi_sig_num = int(shop_size * scala)
     f = ["top_{}_wifi_sig".format(_i) for _i in range(top_wifi_sig_num)]
     return f
+
+
+def haversine(lon1, lat1, lon2, lat2): # 经度1，纬度1，经度2，纬度2 （十进制度数）
+    """
+    Calculate the great circle distance between two points
+    on the earth (specified in decimal degrees)
+    """
+    # 将十进制度数转化为弧度
+    lat1, lng1, lat2, lng2 = map(np.radians, (lat1, lon1, lat2, lon2))
+    AVG_EARTH_RADIUS = 6371  # in km
+    lat = lat2 - lat1
+    lng = lng2 - lng1
+    d = np.sin(lat * 0.5) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(lng * 0.5) ** 2
+    h = 2 * AVG_EARTH_RADIUS * np.arcsin(np.sqrt(d))
+    return h
+
+def manhattan(lon1, lat1, lon2, lat2):  # 2点曼哈顿距离计算, 单位km
+    a = haversine(lon1, lat1, lon2, lat1)
+    b = haversine(lon1, lat1, lon1, lat2)
+    return a + b
+
+
+def bearing(lng1, lat1, lng2, lat2):  # 方位计算
+    """ function was taken from beluga's notebook as this function works on array
+    while my function used to work on individual elements and was noticably slow"""
+    lng_delta_rad = np.radians(lng2 - lng1)
+    lat1, lng1, lat2, lng2 = map(np.radians, (lat1, lng1, lat2, lng2))
+    y = np.sin(lng_delta_rad) * np.cos(lat2)
+    x = np.cos(lat1) * np.sin(lat2) - np.sin(lat1) * np.cos(lat2) * np.cos(lng_delta_rad)
+    return np.degrees(np.arctan2(y, x))
 
 
 if __name__ == '__main__':

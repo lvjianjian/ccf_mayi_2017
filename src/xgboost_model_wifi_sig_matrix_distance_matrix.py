@@ -19,7 +19,7 @@ import xgboost as xgb
 
 
 def main(offline):
-    model_name = "xgboost_wifi_sig"
+    model_name = "xgboost_wifi_sig_lonlat"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -38,14 +38,12 @@ def main(offline):
         train_matrix = np.tile(-train_matrix.max(axis=1, keepdims=True), (1, train_matrix.shape[1])) + train_matrix
         test_matrix = np.tile(-test_matrix.max(axis=1, keepdims=True), (1, test_matrix.shape[1])) + test_matrix
 
-
         scala = 1
         pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)
 
-
-        test = xgb.DMatrix(test_matrix)
+        # test = xgb.DMatrix(test_matrix)
         # train_matrix = train_matrix[:, :300]
         # print df[:300]
         # train_matrix = (train_matrix[:] > -90).astype(int)
@@ -56,16 +54,50 @@ def main(offline):
         label_encoder = LabelEncoder().fit(shops)
         y = label_encoder.transform(train.shop_id)
 
+        # distance_matrix
+        # 加入经纬度 直接经纬度效果很差
+        train_lonlats = train[["longitude", "latitude"]].values
+        test_lonlats = test_all[test_all.mall_id == mall_id][["longitude", "latitude"]].values
+        # 用户经纬度与各个商店的距离矩阵
+        d = rank_one(train, "shop_id")
+        verctors = []
+        for _s, _index in d.items():
+            _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
+            _shop = np.tile(_shop, (train_lonlats.shape[0], 1))
+            verctors.append(
+                haversine(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+            # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+        distance_matrix = np.concatenate(verctors, axis=1)
+
+        verctors = []
+        for _s, _index in d.items():
+            _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
+            _shop = np.tile(_shop, (test_lonlats.shape[0], 1))
+            verctors.append(
+                haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+            # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+        test_dis_matrix = np.concatenate(verctors, axis=1)
+
+        pca_dis = PCA(n_components=int(round(num_class / 5))).fit(distance_matrix)
+        distance_matrix = pca_dis.transform(distance_matrix)
+        test_dis_matrix = pca_dis.transform(test_dis_matrix)
+        train_dis_matrix = distance_matrix
         if offline:
-            train_matrix, test_matrix, y, test_y = train_test_split(train_matrix, y, test_size=0.1)
-        train_x, valid_x, train_y, valid_y = train_test_split(train_matrix, y)
+            train_matrix, test_matrix, train_dis_matrix, test_dis_matrix, y, test_y = train_test_split(train_matrix,
+                                                                                                       distance_matrix,
+                                                                                                       y, test_size=0.1)
+        train_x, valid_x, train_dis_x, valid_dis_x, train_y, valid_y = train_test_split(train_matrix, train_dis_matrix,
+                                                                                        y)
+
+        train_x = np.concatenate([train_x, train_dis_x], axis=1)
+        valid_x = np.concatenate([valid_x, valid_dis_x], axis=1)
 
         train = xgb.DMatrix(train_x, label=train_y)
         valid = xgb.DMatrix(valid_x, label=valid_y)
         evals = [(train, "train"), (valid, "valid")]
 
-        if offline:
-            test = xgb.DMatrix(test_matrix)
+        test_matrix = np.concatenate([test_matrix, test_dis_matrix], axis=1)
+        test = xgb.DMatrix(test_matrix)
 
         print "num_class", num_class
         # 模型参数
@@ -153,4 +185,5 @@ def main(offline):
 
 
 if __name__ == '__main__':
+    main(offline=False)
     main(offline=True)
