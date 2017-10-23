@@ -16,7 +16,14 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA
 import xgboost as xgb
+import argparse
+import os
+parser = argparse.ArgumentParser()
+parser.add_argument('--path', required=True, type=str,  help='the path to save the features')
 
+opt = parser.parse_args()
+if os.path.exists(os.path.join("../result", opt.path)) == False:
+    os.mkdir(os.path.join("../result", opt.path))
 
 def main(offline):
     model_name = "xgboost_wifi_sig"
@@ -26,18 +33,21 @@ def main(offline):
     mall_ids = shop_info.mall_id.unique()
     all_predict = {}
     row_ids_or_true = {}
+    # mall_ids = ["m_690"]
     for _index, mall_id in enumerate(mall_ids):
         print "train: ", mall_id, " {}/{}".format(_index, len(mall_ids))
         shops = shop_info[shop_info.mall_id == mall_id].shop_id.unique()
         num_class = len(shops)
         df, train_cache, test_cache = get_wifi_cache(mall_id)
         train_matrix = train_cache[2]
+        train_matrix = np.tile(-train_matrix.max(axis=1,keepdims=True),(1,train_matrix.shape[1])) + train_matrix
+        # print(train_matrix.max(axis=1,keepdims=True))
+        # exit()
         test_matrix = test_cache[2]
 
         # 将wifi 信号加上每个sample的最大wifi信号， 屏蔽个体之间接收wifi信号的差异
         train_matrix = np.tile(-train_matrix.max(axis=1, keepdims=True), (1, train_matrix.shape[1])) + train_matrix
         test_matrix = np.tile(-test_matrix.max(axis=1, keepdims=True), (1, test_matrix.shape[1])) + test_matrix
-
 
         scala = 1
         pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
@@ -46,10 +56,6 @@ def main(offline):
 
 
         test = xgb.DMatrix(test_matrix)
-        # train_matrix = train_matrix[:, :300]
-        # print df[:300]
-        # train_matrix = (train_matrix[:] > -90).astype(int)
-        # print train_matrix.sum()
 
         train = train_all[train_all.mall_id == mall_id]
         test_index = test_cache[0]
@@ -123,7 +129,7 @@ def main(offline):
         _acc = acc(all_predict, all_true)
         print "all acc is", _acc
         result["all_acc"] = _acc
-        path = "../result/offline/{}_f{}_eta{}_md{}_ss{}_csb{}_mcw{}_ga{}_al{}_la{}_es{}".format(model_name,
+        path = os.path.join("../result", opt.path, "{}_f{}_eta{}_md{}_ss{}_csb{}_mcw{}_ga{}_al{}_la{}_es{}".format(model_name,
                                                                                                  "num_class_{}".format(
                                                                                                          scala),
                                                                                                  eta, max_depth,
@@ -132,7 +138,8 @@ def main(offline):
                                                                                                  min_child_weight,
                                                                                                  gamma,
                                                                                                  alpha, _lambda,
-                                                                                                 early_stop_rounds)
+                                                                                                 early_stop_rounds))
+
         save_acc(result, path, None)
 
     else:

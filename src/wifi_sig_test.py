@@ -32,6 +32,8 @@ def main1(mall_id):  # pca
     train_index = train_cache[0]
     train_use_wifi = train_cache[1]
     train_matrix = train_cache[2]
+    print(train_matrix.max(axis=1))
+    exit()
     scala = 1
     train_matrix = PCA(n_components=int(num_class * scala)).fit_transform(train_matrix)
     # train_matrix = train_matrix[:, :300]

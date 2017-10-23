@@ -56,7 +56,7 @@ def save_acc(result, path, features):
 def load_shop_info():
     global shop_info
     if shop_info is None:
-        shop_info = pd.read_csv("../data/训练数据-ccf_first_round_shop_info.csv")
+        shop_info = pd.read_csv("../data/train-ccf_first_round_shop_info.csv")
         shop_info.columns = ['shop_id', 'category_id', 'shop_longitude', 'shop_latitude', 'price', 'mall_id']
     return shop_info
 
@@ -64,7 +64,7 @@ def load_shop_info():
 def load_train():
     global train_info
     if train_info is None:
-        train_info = pd.read_csv("../data/训练数据-ccf_first_round_user_shop_behavior.csv")
+        train_info = pd.read_csv("../data/train-ccf_first_round_user_shop_behavior.csv")
         shop_info = load_shop_info()
         train_info = pd.merge(train_info, shop_info, on="shop_id", how="left")
     return train_info
@@ -73,7 +73,7 @@ def load_train():
 def load_testA():
     global testA_info
     if testA_info is None:
-        testA_info = pd.read_csv("../data/AB榜测试集-evaluation_public.csv")
+        testA_info = pd.read_csv("../data/AB-test-evaluation_public.csv")
     return testA_info
 
 
