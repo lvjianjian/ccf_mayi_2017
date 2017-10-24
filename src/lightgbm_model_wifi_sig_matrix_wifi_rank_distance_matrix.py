@@ -19,7 +19,7 @@ import lightgbm as lgb
 
 
 def main(offline):
-    model_name = "lightgbm_wifi_sig_lonlat"
+    model_name = "lightgbm_wifi_sig_matrix_rank_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -101,8 +101,8 @@ def main(offline):
         test_dis_matrix = pca_dis.transform(test_dis_matrix)
         train_dis_matrix = distance_matrix
 
-        train_matrix = np.concatenate([train_matrix, train_dis_matrix], axis=1)
-        test_matrix = np.concatenate([test_matrix, test_dis_matrix], axis=1)
+        train_matrix = np.concatenate([train_matrix, train_dis_matrix,other_train_wifi_feature], axis=1)
+        test_matrix = np.concatenate([test_matrix, test_dis_matrix,other_test_wifi_feature], axis=1)
 
         if offline:
             train_matrix, test_matrix, y, test_y = train_test_split(train_matrix, y, test_size=0.1)
@@ -192,7 +192,7 @@ def main(offline):
 
 
 def main_kfold(offline, kfold=5, mall_ids=-1):
-    model_name = "lightgbm_{}fold_wifi_sig_lonlat".format(kfold)
+    model_name = "lightgbm_{}fold_wifi_matrix_rank_lonlat_matrix".format(kfold)
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -279,8 +279,8 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
         test_dis_matrix = pca_dis.transform(test_dis_matrix)
         train_dis_matrix = distance_matrix
 
-        train_matrix = np.concatenate([train_matrix, train_dis_matrix,other_train_wifi_feature], axis=1)
-        test_matrix = np.concatenate([test_matrix, test_dis_matrix,other_test_wifi_feature], axis=1)
+        train_matrix = np.concatenate([train_matrix, train_dis_matrix, other_train_wifi_feature], axis=1)
+        test_matrix = np.concatenate([test_matrix, test_dis_matrix, other_test_wifi_feature], axis=1)
 
         print "num_class", num_class
         # 模型参数
@@ -387,4 +387,4 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_kfold(offline=True, mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"])
+    main_kfold(offline=False)  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
