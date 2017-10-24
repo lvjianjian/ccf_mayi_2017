@@ -58,9 +58,9 @@ def main(mall_id):
     train_matrixs = []
     test_matrixs = []
     for _name2 in name2s:
-        train_matrix, test_matrix = shop_attractive_matrix("shop_id", _name2, train, test, shops)
-        train_matrixs.append(train_matrix)
-        test_matrixs.append(test_matrix)
+        # train_matrix, test_matrix = shop_attractive_matrix("shop_id", _name2, train, test, shops)
+        # train_matrixs.append(train_matrix)
+        # test_matrixs.append(test_matrix)
         train_matrix, test_matrix = shop_attractive_matrix("category_id", _name2, train, test, shop_info.category_id.unique())
         train_matrixs.append(train_matrix)
         test_matrixs.append(test_matrix)
