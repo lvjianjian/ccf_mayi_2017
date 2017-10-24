@@ -7,5 +7,5 @@ class shop_info(object):
         # drop duplicates
 		self.data = data.drop_duplicates(["shop_id"])
 
-if __name__ == "__main__":
-    shop_inf = shop_info()
+# if __name__ == "__main__":
+#     shop_inf = shop_info()
