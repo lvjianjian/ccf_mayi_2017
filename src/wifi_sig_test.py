@@ -681,7 +681,6 @@ def main_tv_kfold_lgb(mall_id):  # train valid test
     test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank = use_wifi_in_wifi_rank(test, train, d)
     other_train_wifi_features.append(train_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
     other_test_wifi_features.append(test_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-    # print train_use_wifi_in_wifi_rank
     for _top in range(10):
         test_no_use_wifi_in_wifi_rank, train_no_use_wifi_in_wifi_rank = no_use_wifi_in_wifi_rank(test,
                                                                                                  train,
@@ -711,9 +710,9 @@ def main_tv_kfold_lgb(mall_id):  # train valid test
     valid_x = pca.transform(valid_x)
     test_x = pca.transform(test_x)
 
-    # train_x = np.concatenate([train_x, other_train_x], axis=1)
-    # valid_x = np.concatenate([valid_x, other_valid_x], axis=1)
-    # test_x = np.concatenate([test_x, other_test_x], axis=1)
+    train_x = np.concatenate([train_x, other_train_x], axis=1)
+    valid_x = np.concatenate([valid_x, other_valid_x], axis=1)
+    test_x = np.concatenate([test_x, other_test_x], axis=1)
 
     train_x = np.concatenate([train_x, valid_x, test_x])
     train_y = np.concatenate([train_y, valid_y, test_y])

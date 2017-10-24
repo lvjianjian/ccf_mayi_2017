@@ -1,0 +1,11 @@
+xgboost_f7_eta0.02_md5_ss1_csb1_mcw10_ga1_al0_la0,0.5228,0.5254
+xgboost_f18_eta0.02_md5_ss1_csb1_mcw10_ga1_al0_la0,0.6678,0.6936
+xgboost_f22_eta0.02_md5_ss1_csb1_mcw10_ga1_al0_la0,0.7099,0.7168
+xgboost_f122_eta0.02_md10_ss1_csb1_mcw10_ga1_al0_la0,0.7604,
+xgboost_f126_eta0.02_md10_ss1_csb1_mcw10_ga1_al0_la0,0.7686,0.7734
+xgboost_f87_eta0.02_md10_ss1_csb1_mcw10_ga1_al0_la0,0.7746,0.7856
+xgboost_wifi_sig_fnum_class_1_eta0.02_md10_ss0.8_csb0.8_mcw5_ga1_al0_la0_es10,0.8476,0.8287,wifi信号矩阵降维
+xgboost_wifi_sig_fnum_class_1_eta0.02_md10_ss0.8_csb0.8_mcw5_ga1_al0_la0_es6,0.8493,0.8321,屏蔽手机间的信号差异
+xgboost_wifi_sig_lonlat_fnum_class_1_eta0.02_md10_ss0.8_csb0.8_mcw5_ga1_al0_la0_es6,0.8722,0.8557,屏蔽手机间的信号差异,距离矩阵并降维
+lightgbm_wifi_sig_lonlat_fnum_class_1_lr0.02_leaves31_ff0.8_bf0.8_bfq5_es3,0.8739,0.8598
+lightgbm_5fold_wifi_sig_lonlat_fnum_class_1_lr0.02_leaves31_ff0.8_bf0.8_bfq5_es3,0.8792,0.8660, 5交叉取平均best_iteration并用全部数据训练

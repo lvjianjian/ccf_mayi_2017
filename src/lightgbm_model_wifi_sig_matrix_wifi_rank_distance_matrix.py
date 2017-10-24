@@ -26,7 +26,7 @@ def main(offline):
     mall_ids = shop_info.mall_id.unique()
     all_predict = {}
     row_ids_or_true = {}
-
+    mall_ids = ["m_6803"]
     for _index, mall_id in enumerate(mall_ids):
         print "train: ", mall_id, " {}/{}".format(_index, len(mall_ids))
         shops = shop_info[shop_info.mall_id == mall_id].shop_id.unique()
@@ -191,20 +191,20 @@ def main(offline):
         save_result(result, path, None)
 
 
-def main_kfold(offline, kfold=5):
+def main_kfold(offline, kfold=5, mall_ids=-1):
     model_name = "lightgbm_{}fold_wifi_sig_lonlat".format(kfold)
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
-    mall_ids = shop_info.mall_id.unique()
+    if mall_ids == -1:
+        mall_ids = shop_info.mall_id.unique()
     offline_predicts = []
     offline_reals = []
     all_rowid = {}
-    all_predict = {}
+    all_predicts = {}
     for _ in range(kfold):
         offline_predicts.append({})
         offline_reals.append({})
-    # mall_ids = ["m_8093", "m_4572"]
     for _index, mall_id in enumerate(mall_ids):
         print "train: ", mall_id, " {}/{}".format(_index, len(mall_ids))
         shops = shop_info[shop_info.mall_id == mall_id].shop_id.unique()
@@ -279,8 +279,8 @@ def main_kfold(offline, kfold=5):
         test_dis_matrix = pca_dis.transform(test_dis_matrix)
         train_dis_matrix = distance_matrix
 
-        train_matrix = np.concatenate([train_matrix, train_dis_matrix], axis=1)
-        test_matrix = np.concatenate([test_matrix, test_dis_matrix], axis=1)
+        train_matrix = np.concatenate([train_matrix, train_dis_matrix,other_train_wifi_feature], axis=1)
+        test_matrix = np.concatenate([test_matrix, test_dis_matrix,other_test_wifi_feature], axis=1)
 
         print "num_class", num_class
         # 模型参数
@@ -307,7 +307,7 @@ def main_kfold(offline, kfold=5):
         early_stop_rounds = 3
 
         # kfold
-        kf = KFold(n_splits=kfold)
+        kf = KFold(n_splits=kfold, shuffle=True)
         print "train", mall_id
 
         _index = 0
@@ -336,11 +336,11 @@ def main_kfold(offline, kfold=5):
 
         if not offline:  # 线上
             best_iteration = int(np.mean(best_iterations))
-            train = lgb.train(train_matrix, y)
+            train = lgb.Dataset(train_matrix, label=y)
             bst = lgb.train(params, train, best_iteration)
             predict = np.argmax(bst.predict(test_matrix, best_iteration), axis=1).astype(int)
             predict = label_encoder.inverse_transform(predict)
-            all_predict[mall_id] = predict
+            all_predicts[mall_id] = predict
             all_rowid[mall_id] = test_all[np.in1d(test_all.index, test_index)].row_id.values
 
     result = {}
@@ -371,7 +371,7 @@ def main_kfold(offline, kfold=5):
 
     if not offline:
         all_rowid = np.concatenate(all_rowid.values())
-        all_predict = np.concatenate(all_predict.values())
+        all_predict = np.concatenate(all_predicts.values())
         result = pd.DataFrame(data={"row_id": all_rowid, "shop_id": all_predict})
         result.sort_values(by="row_id", inplace=True)
         path = "../result/online/{}_f{}_lr{}_leaves{}_ff{}_bf{}_bfq{}_es{}".format(model_name,
@@ -387,4 +387,4 @@ def main_kfold(offline, kfold=5):
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_kfold(offline=True)
+    main_kfold(offline=True, mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"])
