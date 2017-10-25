@@ -1,5 +1,18 @@
-model:
-features_extractor:
-  extractor_0:
-  extractor_1:
-  extractor_2:
+train:
+  result_save:
+  mode:
+  model_class:
+  features_extractors:
+    extractor_function_name: "extract_wifi_features"
+      
+      mall_id: ""
+      features_prefix:
+      wifi_info_cache_pre_fix: "../data/.."
+      :
+
+  features_prefix:
+  result_prefix:
+  hyperparameters:
+
+
+
