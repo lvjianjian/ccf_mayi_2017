@@ -1,7 +1,7 @@
 # encoding = utf-8
 import yaml
 
-class Config_object(object):
+class config_object(object):
 	def __init__(self, config):
 		stream = open(config, "r")
 		docs = yaml.load_all(stream)
