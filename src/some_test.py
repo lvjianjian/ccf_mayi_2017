@@ -108,9 +108,9 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
         train_matrix = np.concatenate([train_matrix, train_dis_matrix, other_train_wifi_feature], axis=1)
         test_matrix = np.concatenate([test_matrix, test_dis_matrix, other_test_wifi_feature], axis=1)
 
-        train_m = train_all[train_all.mall_id == mall_id]
-        preprocess_basic_time(train_m)
-        train_matrix = np.concatenate([train_matrix, train_m.dt.dt.hour.values.reshape((-1,1))],axis=1)
+        # train_m = train_all[train_all.mall_id == mall_id]
+        # preprocess_basic_time(train_m)
+        # train_matrix = np.concatenate([train_matrix, train_m.dt.dt.hour.values.reshape((-1,1))],axis=1)
 
 
 
@@ -221,4 +221,4 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
         save_result(result, path, None)
 
 if __name__ == '__main__':
-    main_kfold(offline=True, mall_ids=["m_2467"])  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+    main_kfold(offline=True, mall_ids=["m_7168"])  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]

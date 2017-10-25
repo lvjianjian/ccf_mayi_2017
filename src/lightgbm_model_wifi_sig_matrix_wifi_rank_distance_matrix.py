@@ -269,8 +269,7 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
         for _s, _index in d.items():
             _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
             _shop = np.tile(_shop, (test_lonlats.shape[0], 1))
-            verctors.append(
-                    haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+            verctors.append(haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         test_dis_matrix = np.concatenate(verctors, axis=1)
 

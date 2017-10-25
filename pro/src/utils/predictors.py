@@ -7,6 +7,7 @@ class predictors(object):
 		self.labels = labels
     
 	def lgb_predict(self, config):
+		pass
 		# predict the results and write in the f
 		# TODO
 
