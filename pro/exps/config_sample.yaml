@@ -1,0 +1,26 @@
+train:
+  file_prefix: ../results/sample/2017102600001
+  model_params:
+    name: "lgb"
+    kfold: 5
+    offline: False
+    hyperparams:
+      task: "train"
+      boosting_type: "gbdt"
+      objective: 'multiclass'
+      metric: ['multi_logloss', 'multi_error']
+      num_leaves: 31
+      learning_rate: 0.02
+      feature_fraction: 0.8
+      bagging_fraction: 0.8
+      bagging_freq: 5
+      verbose: 0
+      num_threads: 4
+      num_class: 0 # the numclass should be definited by the number the shops in the mall
+    n_round: 200
+    early_stop_rounds: 3
+  features_param:
+    features_extractors:
+      extract_wifi_longitude_latitude_features:
+        scala: 1
+        cache_prefix: ../../data/wifi_info_cache
