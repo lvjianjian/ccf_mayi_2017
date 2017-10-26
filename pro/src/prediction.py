@@ -3,6 +3,8 @@ from datasets import *
 from utils import *
 import yaml
 import argparse
+from sklearn.preprocessing import LabelEncoder
+
 parser = argparse.ArgumentParser(description="predict program for Ant shops")
 parser.add_argument("--config", type=str, help="the config path")
 args = parser.parse_args()
@@ -40,7 +42,7 @@ for i, mall_id in enumerate(mall_ids):
             offline_predicts[k][mall_id] = predicts[k]
             offline_reals[k][mall_id] = predicts[k]
     else:
-        off_predicts, off_reals, on_predicts, on_rowids = predict_func.predictor(model_params)
+        off_predicts, off_reals, on_predicts, on_rowids = predict_func.predictor(mall_id, model_params)
         online_predicts[mall_id] = on_predicts
         online_rowids[mall_id] = on_rowids
         for k in range(model_params["kfold"]):
