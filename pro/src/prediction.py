@@ -1,9 +1,10 @@
 # encoding=utf-8
-from datasets import *
+import datasets
 from utils import *
 import yaml
 import argparse
 from sklearn.preprocessing import LabelEncoder
+from utils.common import *
 
 parser = argparse.ArgumentParser(description="predict program for Ant shops")
 parser.add_argument("--config", type=str, help="the config path")
@@ -12,13 +13,17 @@ args = parser.parse_args()
 config = config_object(args.config)
 model_params = config.model_params
 extractors_param = config.features_param
-usr_behavior_data = usr_behavior_info().data
-shop_data = shop_info().data
-evaluation_data = evaluation_info().data
-mall_ids = shop_data.mall_id.unique()
+usr_behavior_data = datasets.usr_behavior_info().data
+shop_data = datasets.shop_info().data
+evaluation_data = datasets.evaluation_info().data
+
+mall_ids = config.mall_ids
+if mall_ids is None or len(mall_ids) == 0:
+    mall_ids = shop_data.mall_id.unique()
 # extractors = config.features_param
+
 features_extractor = features_extractors(extractors_param, shop_data,
-                                        evaluation_data, usr_behavior_data)
+                                         evaluation_data, usr_behavior_data)
 # the phase of train and test are included in the class of predictor 
 # predictor = predictors()
 offline_predicts, offline_reals = [], []
@@ -34,15 +39,23 @@ for i, mall_id in enumerate(mall_ids):
     num_class = len(shops)
     model_params["hyperparams"]["num_class"] = num_class
 
-    train_features, y , test_features =  features_extractor.extract(mall_id)
+    train_features, y, test_features = features_extractor.extract(mall_id)
     predict_func = predictors(train_features, y, test_features, model_params, label_encoder)
+
+    if model_params["train_valid_split_method"] == "leave_one_week":
+        model_params["kfold"] = 1
+
     if model_params["offline"]:
-        predicts, reals = predict_func.predictor(mall_id, model_params)
+        predicts, reals = predict_func.predictor(mall_id,
+                                                 model_params,
+                                                 features_extractor.merged_data[features_extractor.merged_data.mall_id == mall_id])
         for k in range(model_params["kfold"]):
             offline_predicts[k][mall_id] = predicts[k]
             offline_reals[k][mall_id] = predicts[k]
     else:
-        off_predicts, off_reals, on_predicts, on_rowids = predict_func.predictor(mall_id, model_params)
+        off_predicts, off_reals, on_predicts, on_rowids = predict_func.predictor(mall_id,
+                                                                                 model_params,
+                                                                                 features_extractor.merged_data[features_extractor.merged_data.mall_id == mall_id])
         online_predicts[mall_id] = on_predicts
         online_rowids[mall_id] = on_rowids
         for k in range(model_params["kfold"]):
@@ -74,11 +87,3 @@ if not offline:
     result.sort_values(by="row_id", inplace=True)
     path = args.file_prefix + "_online_result"
     save_result(result, path, None)
-
-
-
-
-
-
-
-

@@ -2,7 +2,8 @@ train:
   file_prefix: ../results/sample/2017102600001
   model_params:
     name: "lgb"
-    kfold: 5
+    train_valid_split_method: leave_one_week # kfold or leave_one_week
+    kfold: 5 #if kfold
     offline: False
     hyperparams:
       task: "train"
@@ -24,3 +25,4 @@ train:
       extract_wifi_longitude_latitude_features:
         scala: 1
         cache_prefix: ../../data/wifi_info_cache
+  mall_ids: []

@@ -101,8 +101,8 @@ def main(offline):
         test_dis_matrix = pca_dis.transform(test_dis_matrix)
         train_dis_matrix = distance_matrix
 
-        train_matrix = np.concatenate([train_matrix, train_dis_matrix,other_train_wifi_feature], axis=1)
-        test_matrix = np.concatenate([test_matrix, test_dis_matrix,other_test_wifi_feature], axis=1)
+        train_matrix = np.concatenate([train_matrix, train_dis_matrix, other_train_wifi_feature], axis=1)
+        test_matrix = np.concatenate([test_matrix, test_dis_matrix, other_test_wifi_feature], axis=1)
 
         if offline:
             train_matrix, test_matrix, y, test_y = train_test_split(train_matrix, y, test_size=0.1)
@@ -269,7 +269,8 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
         for _s, _index in d.items():
             _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
             _shop = np.tile(_shop, (test_lonlats.shape[0], 1))
-            verctors.append(haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+            verctors.append(
+                haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         test_dis_matrix = np.concatenate(verctors, axis=1)
 
@@ -387,6 +388,7 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
                                                                                    early_stop_rounds)
         save_result(result, path, None)
 
+
 def main_leave_one_week(offline, mall_ids=-1):
     model_name = "lightgbm_leave_one_week_wifi_matrix_rank_lonlat_matrix"
     train_all = load_train()
@@ -466,7 +468,8 @@ def main_leave_one_week(offline, mall_ids=-1):
         for _s, _index in d.items():
             _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
             _shop = np.tile(_shop, (test_lonlats.shape[0], 1))
-            verctors.append(haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+            verctors.append(
+                haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         test_dis_matrix = np.concatenate(verctors, axis=1)
 
@@ -584,8 +587,7 @@ def main_leave_one_week(offline, mall_ids=-1):
         save_result(result, path, None)
 
 
-
-
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=True, mall_ids=["m_2467"])  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+    main_leave_one_week(offline=True,
+                        mall_ids=["m_2467"])  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]

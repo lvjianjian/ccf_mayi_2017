@@ -586,6 +586,13 @@ def bearing(lng1, lat1, lng2, lat2):  # 方位计算
     return np.degrees(np.arctan2(y, x))
 
 
+def get_last_one_week_index(train):
+    train["i_loc"] = range(train.shape[0])
+    dt = pd.to_datetime(train["time_stamp"]).dt.day
+    valid_index = train[dt > 24]["i_loc"].values
+    train_index = train[dt <= 24]["i_loc"].values
+    return train_index, valid_index
+
 if __name__ == '__main__':
     # save_result(None, "../result/test", ["a", "b"])
     do_wifi_cache()
