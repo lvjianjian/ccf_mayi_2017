@@ -45,6 +45,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         train_matrix = np.tile(-train_matrix.max(axis=1, keepdims=True), (1, train_matrix.shape[1])) + train_matrix
         test_matrix = np.tile(-test_matrix.max(axis=1, keepdims=True), (1, test_matrix.shape[1])) + test_matrix
 
+
         # wifi rank info
         train = train_all[train_all.mall_id == mall_id]
         test = test_all[test_all.mall_id == mall_id]
@@ -69,7 +70,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         other_train_wifi_feature = np.concatenate(other_train_wifi_features, axis=1)
         other_test_wifi_feature = np.concatenate(other_test_wifi_features, axis=1)
 
-        scala = 2
+        scala = 5
 
         pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
         train_matrix = pca.transform(train_matrix)
@@ -107,9 +108,9 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         test_dis_matrix = np.concatenate(verctors, axis=1)
 
-        pca_dis = PCA(n_components=int(round(num_class / 5))).fit(distance_matrix)
-        distance_matrix = pca_dis.transform(distance_matrix)
-        test_dis_matrix = pca_dis.transform(test_dis_matrix)
+        # pca_dis = PCA(n_components=int(round(num_class / 5))).fit(distance_matrix)
+        # distance_matrix = pca_dis.transform(distance_matrix)
+        # test_dis_matrix = pca_dis.transform(test_dis_matrix)
         train_dis_matrix = distance_matrix
 
         train_matrix = np.concatenate([train_matrix, train_dis_matrix, other_train_wifi_feature], axis=1)
@@ -236,5 +237,5 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
 if __name__ == '__main__':
     # main(offline=False)
     main_leave_one_week(offline=True,
-                        mall_ids=["m_6803"],
+                        mall_ids=["m_8093","m_4572"],
                         use_hyperopt=False)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]

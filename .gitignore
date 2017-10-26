@@ -3,3 +3,4 @@
 data/
 result/
 !result/record
+src/*.out
