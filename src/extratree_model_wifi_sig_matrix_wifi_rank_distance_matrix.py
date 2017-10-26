@@ -15,11 +15,11 @@ from util import *
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import ExtraTreesClassifier
 from hyperopt import hp, fmin, tpe, rand, space_eval
 
 def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
-    model_name = "rf_leave_one_week_wifi_matrix_rank_lonlat_matrix"
+    model_name = "et_leave_one_week_wifi_matrix_rank_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -131,7 +131,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
 
             def objective(argsDict):
 
-                rf = RandomForestClassifier(
+                rf = ExtraTreesClassifier(
                         n_estimators=int(argsDict["n_estimators"]),
                         criterion=argsDict["criterion"],
                         min_samples_split=int(argsDict["min_samples_split"]),
@@ -175,7 +175,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
             _valid_x = train_matrix[_valid_index]
             _valid_y = y[_valid_index]
 
-            rf = RandomForestClassifier(n_estimators=n_estimators,
+            rf = ExtraTreesClassifier(n_estimators=n_estimators,
                                         criterion=criterion,
                                         min_samples_split=min_samples_split,
                                         min_samples_leaf=min_samples_leaf,
@@ -189,7 +189,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
             offline_reals[_index][mall_id] = label_encoder.inverse_transform(_valid_y)
             _index += 1
         if not offline:  # 线上
-            rf = RandomForestClassifier(n_estimators=n_estimators,
+            rf = ExtraTreesClassifier(n_estimators=n_estimators,
                                         criterion=criterion,
                                         min_samples_split=min_samples_split,
                                         min_samples_leaf=min_samples_leaf,
@@ -236,5 +236,5 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
 if __name__ == '__main__':
     # main(offline=False)
     main_leave_one_week(offline=True,
-                        mall_ids=["m_6803"],
+                        mall_ids=["m_8093","m_4572","m_9068","m_2270","m_968"],
                         use_hyperopt=False)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]

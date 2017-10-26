@@ -10,3 +10,4 @@ xgboost_wifi_sig_lonlat_fnum_class_1_eta0.02_md10_ss0.8_csb0.8_mcw5_ga1_al0_la0_
 lightgbm_wifi_sig_lonlat_fnum_class_1_lr0.02_leaves31_ff0.8_bf0.8_bfq5_es3,0.8739,0.8598
 lightgbm_5fold_wifi_sig_lonlat_fnum_class_1_lr0.02_leaves31_ff0.8_bf0.8_bfq5_es3,0.8792,0.8660, 5交叉取平均best_iteration并用全部数据训练
 lightgbm_5fold_wifi_matrix_rank_lonlat_matrix_fnum_class_1_lr0.02_leaves31_ff0.8_bf0.8_bfq5_es3,0.8858,0.8739,加入wifi rank信息
+rf_leave_one_week_wifi_matrix_rank_lonlat_matrix_fnum_class_1_es1000,,0.8749,RF

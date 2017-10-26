@@ -14,7 +14,7 @@
 from util import *
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, KFold
-from sklearn.decomposition import PCA
+from sklearn.decomposition import PCA,MiniBatchSparsePCA,RandomizedPCA
 import lightgbm as lgb
 
 
@@ -270,7 +270,7 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
             _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
             _shop = np.tile(_shop, (test_lonlats.shape[0], 1))
             verctors.append(
-                haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+                    haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         test_dis_matrix = np.concatenate(verctors, axis=1)
 
@@ -445,6 +445,7 @@ def main_leave_one_week(offline, mall_ids=-1):
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)
 
+
         test_index = test_cache[0]
         label_encoder = LabelEncoder().fit(shops)
         y = label_encoder.transform(train.shop_id)
@@ -469,7 +470,7 @@ def main_leave_one_week(offline, mall_ids=-1):
             _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
             _shop = np.tile(_shop, (test_lonlats.shape[0], 1))
             verctors.append(
-                haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+                    haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         test_dis_matrix = np.concatenate(verctors, axis=1)
 
@@ -478,8 +479,14 @@ def main_leave_one_week(offline, mall_ids=-1):
         test_dis_matrix = pca_dis.transform(test_dis_matrix)
         train_dis_matrix = distance_matrix
 
-        train_matrix = np.concatenate([train_matrix, train_dis_matrix, other_train_wifi_feature], axis=1)
-        test_matrix = np.concatenate([test_matrix, test_dis_matrix, other_test_wifi_feature], axis=1)
+        train_matrix = np.concatenate([train_matrix,
+                                       train_dis_matrix,
+                                       other_train_wifi_feature],
+                                      axis=1)
+        test_matrix = np.concatenate([test_matrix,
+                                      test_dis_matrix,
+                                      other_test_wifi_feature],
+                                      axis=1)
 
         print "num_class", num_class
         # 模型参数
@@ -589,5 +596,4 @@ def main_leave_one_week(offline, mall_ids=-1):
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=True,
-                        mall_ids=["m_2467"])  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+    main_leave_one_week(offline=True,mall_ids=["m_8093", "m_4572"])  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
