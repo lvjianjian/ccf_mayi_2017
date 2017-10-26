@@ -17,6 +17,7 @@ from sklearn.model_selection import train_test_split, KFold
 from sklearn.decomposition import PCA
 from sklearn.ensemble import ExtraTreesClassifier
 from hyperopt import hp, fmin, tpe, rand, space_eval
+import os,yaml
 
 def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
     model_name = "et_leave_one_week_wifi_matrix_rank_lonlat_matrix"
@@ -29,6 +30,10 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
     offline_reals = []
     all_rowid = {}
     all_predicts = {}
+    if os.path.exists("../data/best_scala/best_scala_{}.yaml".format(model_name)):
+        best_scala = yaml.load(open("../data/best_scala/best_scala_{}.yaml".format(model_name), "r"))
+    else:
+        best_scala = {}
     kfold = 1
     for _ in range(kfold):
         offline_predicts.append({})
@@ -69,12 +74,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         other_train_wifi_feature = np.concatenate(other_train_wifi_features, axis=1)
         other_test_wifi_feature = np.concatenate(other_test_wifi_features, axis=1)
 
-        scala = 2
-
-        pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
-        train_matrix = pca.transform(train_matrix)
-        test_matrix = pca.transform(test_matrix)
-
         test_index = test_cache[0]
         label_encoder = LabelEncoder().fit(shops)
         y = label_encoder.transform(train.shop_id)
@@ -89,10 +88,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         for _s, _index in d.items():
             _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
             _shop = np.tile(_shop, (train_lonlats.shape[0], 1))
-            verctors.append(haversine(train_lonlats[:, 0],
-                                      train_lonlats[:, 1],
-                                      _shop[:, 0],
-                                      _shop[:, 1]).reshape((-1, 1)))
+            verctors.append(
+                    haversine(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         distance_matrix = np.concatenate(verctors, axis=1)
 
@@ -100,72 +97,74 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         for _s, _index in d.items():
             _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
             _shop = np.tile(_shop, (test_lonlats.shape[0], 1))
-            verctors.append(haversine(test_lonlats[:, 0],
-                                      test_lonlats[:, 1],
-                                      _shop[:, 0],
-                                      _shop[:, 1]).reshape((-1, 1)))
+            verctors.append(
+                    haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         test_dis_matrix = np.concatenate(verctors, axis=1)
 
-        pca_dis = PCA(n_components=int(round(num_class / 5))).fit(distance_matrix)
-        distance_matrix = pca_dis.transform(distance_matrix)
-        test_dis_matrix = pca_dis.transform(test_dis_matrix)
+        # pca_dis = PCA(n_components=int(round(num_class / 2))).fit(distance_matrix)
+        # distance_matrix = pca_dis.transform(distance_matrix)
+        # test_dis_matrix = pca_dis.transform(test_dis_matrix)
         train_dis_matrix = distance_matrix
 
-        train_matrix = np.concatenate([train_matrix, train_dis_matrix, other_train_wifi_feature], axis=1)
-        test_matrix = np.concatenate([test_matrix, test_dis_matrix, other_test_wifi_feature], axis=1)
-
-        print "num_class", num_class
-
-        # 将训练数据集划分为最后一周作为验证，前几周作为训练，不用kfold
-        print "train", mall_id
+        n_estimetors = 1000
 
         _train_index, _valid_index = get_last_one_week_index(train)
-
+        argsDict = {}
         if use_hyperopt:
-            _train_x = train_matrix[_train_index]
-            _train_y = y[_train_index]
-
-            _valid_x = train_matrix[_valid_index]
-            _valid_y = y[_valid_index]
-
             def objective(argsDict):
+                _train_matrix = train_matrix.copy()
+                _scala = argsDict["scala"]
+                pca = PCA(n_components=int(num_class * _scala)).fit(_train_matrix)
+                _train_matrix = pca.transform(_train_matrix)
 
-                rf = ExtraTreesClassifier(
-                        n_estimators=int(argsDict["n_estimators"]),
-                        criterion=argsDict["criterion"],
-                        min_samples_split=int(argsDict["min_samples_split"]),
-                        min_samples_leaf=int(argsDict["min_samples_leaf"]),
-                        max_features=argsDict["max_features"],
-                        n_jobs=-1
-                )
+                _train_matrix = np.concatenate([_train_matrix,
+                                                train_dis_matrix,
+                                                other_train_wifi_feature],
+                                               axis=1)
+                _train_x = _train_matrix[_train_index]
+                _train_y = y[_train_index]
 
-                rf.fit(_train_x, _train_y)
+                _valid_x = _train_matrix[_valid_index]
+                _valid_y = y[_valid_index]
+
+                rf = ExtraTreesClassifier(n_estimators=n_estimetors,n_jobs=-1)
+                rf.fit(_train_x,_train_y)
                 y_predict = rf.predict(_valid_x)
                 return -acc(y_predict, _valid_y)
 
             space = {
-                "n_estimators": hp.choice("n_estimators", range(300, 1500, 100)),
-                "criterion": hp.choice("criterion", ["gini", "entropy"]),
-                "min_samples_split": hp.choice("min_samples_split", range(2, 10)),
-                "min_samples_leaf": hp.choice("min_samples_leaf", range(1, 10)),
-                "max_features": hp.choice("max_features", ["sqrt", "log2", None, 0.8, 0.7, 0.6])
+                "scala": hp.uniform("scala", 0.3, 8)
             }
 
-            best_sln = fmin(objective, space, algo=tpe.suggest, max_evals=150)
+            best_sln = fmin(objective, space, algo=tpe.suggest, max_evals=12)
             argsDict = space_eval(space, best_sln)
-            print argsDict
-            n_estimators = int(argsDict["n_estimators"])
-            criterion = argsDict["criterion"]
-            min_samples_split = int(argsDict["min_samples_split"])
-            min_samples_leaf = int(argsDict["min_samples_leaf"])
-            max_features = argsDict["max_features"]
+            best_scala[mall_id] = argsDict["scala"]
         else:
-            n_estimators = 1000
-            criterion = "gini"
-            min_samples_split = 2
-            min_samples_leaf = 1
-            max_features = "auto"
+            if len(best_scala) == 0:
+                argsDict["scala"] = 1
+            else:
+                argsDict["scala"] = best_scala[mall_id]
+
+        scala = argsDict["scala"]
+        print "use scala:", scala
+        pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
+        train_matrix = pca.transform(train_matrix)
+        test_matrix = pca.transform(test_matrix)
+
+        train_matrix = np.concatenate([train_matrix,
+                                       train_dis_matrix,
+                                       other_train_wifi_feature],
+                                      axis=1)
+        test_matrix = np.concatenate([test_matrix,
+                                      test_dis_matrix,
+                                      other_test_wifi_feature],
+                                     axis=1)
+
+        print "num_class", num_class
+
+        # kfold
+        print "train", mall_id
 
         _index = 0
         for _train_index, _valid_index in [(_train_index, _valid_index)]:
@@ -175,32 +174,23 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
             _valid_x = train_matrix[_valid_index]
             _valid_y = y[_valid_index]
 
-            rf = ExtraTreesClassifier(n_estimators=n_estimators,
-                                        criterion=criterion,
-                                        min_samples_split=min_samples_split,
-                                        min_samples_leaf=min_samples_leaf,
-                                        max_features=max_features,
-                                        n_jobs=-1,
-                                        verbose=1)
-            rf.fit(_train_x, _train_y)
+            rf = ExtraTreesClassifier(n_estimators=n_estimetors,n_jobs=-1)
+            rf.fit(_train_x,_train_y)
+
             predict = rf.predict(_valid_x)
             predict = label_encoder.inverse_transform(predict)
             offline_predicts[_index][mall_id] = predict
             offline_reals[_index][mall_id] = label_encoder.inverse_transform(_valid_y)
             _index += 1
+
         if not offline:  # 线上
-            rf = ExtraTreesClassifier(n_estimators=n_estimators,
-                                        criterion=criterion,
-                                        min_samples_split=min_samples_split,
-                                        min_samples_leaf=min_samples_leaf,
-                                        max_features=max_features,
-                                        n_jobs=-1,
-                                        verbose=1)
+            rf = ExtraTreesClassifier(n_estimators=n_estimetors, n_jobs=-1)
             rf.fit(train_matrix, y)
             predict = rf.predict(test_matrix)
             predict = label_encoder.inverse_transform(predict)
             all_predicts[mall_id] = predict
             all_rowid[mall_id] = test_all[np.in1d(test_all.index, test_index)].row_id.values
+
     result = {}
     for _mall_id in mall_ids:
         accs = []
@@ -217,24 +207,34 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         accs.append(_acc)
     print "all acc is", np.mean(accs)
 
-    if len(mall_ids) < 97:
+
+
+    if len(mall_ids) < 50:
         exit(1)
 
     result["all_acc"] = np.mean(accs)
-    path = "../result/offline/{}_f{}_es{}".format(model_name, "num_class_{}".format(scala), n_estimators)
+    path = "../result/offline/{}_f{}_es{}".format(model_name,
+                                                  "num_class_{}".format(scala),
+                                                  n_estimetors)
     save_acc(result, path, None)
+
+    if use_hyperopt:
+        yaml.dump(best_scala, open("../data/best_scala/best_scala_{}.yaml".format(model_name), "w"))
+
 
     if not offline:
         all_rowid = np.concatenate(all_rowid.values())
         all_predict = np.concatenate(all_predicts.values())
         result = pd.DataFrame(data={"row_id": all_rowid, "shop_id": all_predict})
         result.sort_values(by="row_id", inplace=True)
-        path = "../result/online/{}_f{}_es{}".format(model_name, "num_class_{}".format(scala), n_estimators)
+        path = "../result/online/{}_f{}_es{}".format(model_name,
+                                                     "num_class_{}".format(scala),
+                                                     n_estimetors)
         save_result(result, path, None)
 
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=True,
-                        mall_ids=["m_8093","m_4572","m_9068","m_2270","m_968"],
-                        use_hyperopt=False)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+    main_leave_one_week(offline=False,
+                        mall_ids=-1,
+                        use_hyperopt=True)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
