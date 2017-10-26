@@ -390,4 +390,4 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_kfold(offline=True,mall_ids=["m_2467"])  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+    main_kfold(offline=True, mall_ids=["m_2467"])  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]

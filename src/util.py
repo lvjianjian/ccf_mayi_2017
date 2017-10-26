@@ -30,8 +30,6 @@ global_top_wifi_sig_num = "shop_size_4"  # 选取的top wifi sig是shop size的4
 pca_component_top_wifi_sig = 15  # 对top_wifi_sig进行 pca降纬
 
 
-
-
 def acc(pred, y):
     return float((pred == y).sum()) / pred.shape[0]
 
@@ -384,7 +382,7 @@ def rank_label_by_one(train, test, label_dict, col_name, group_by_name, top=5):
         x1 = [label_dict[_x[0]] for _x in x1]
         x1 = np.asarray(x1)
         if x1.shape[0] < top:
-            x1 = np.concatenate([x1,np.asarray([len(label_dict) for _ in range(x1.shape[0],top)])])
+            x1 = np.concatenate([x1, np.asarray([len(label_dict) for _ in range(x1.shape[0], top)])])
         tops.append(x1)
     tops = np.vstack(tops)
     indexs = np.vstack(indexs)
@@ -525,7 +523,7 @@ def wifi_info2csv(datas, names):
             # !!!有wifi同名情况
 
 
-def get_wifi_cache(mall_id, default = -115):
+def get_wifi_cache(mall_id, default=-115):
     df = pd.read_csv("../data/wifi_info_cache/{}_rank.csv".format(mall_id))
     train_index = scipy.load("../data/wifi_info_cache/{}_{}_index.npy".format("train", mall_id))
     test_index = scipy.load("../data/wifi_info_cache/{}_{}_index.npy".format("test", mall_id))
@@ -553,7 +551,7 @@ def wifi_sig_feature_names(mall_id):
     return f
 
 
-def haversine(lon1, lat1, lon2, lat2): # 经度1，纬度1，经度2，纬度2 （十进制度数）
+def haversine(lon1, lat1, lon2, lat2):  # 经度1，纬度1，经度2，纬度2 （十进制度数）
     """
     Calculate the great circle distance between two points
     on the earth (specified in decimal degrees)
@@ -566,6 +564,7 @@ def haversine(lon1, lat1, lon2, lat2): # 经度1，纬度1，经度2，纬度2 �
     d = np.sin(lat * 0.5) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(lng * 0.5) ** 2
     h = 2 * AVG_EARTH_RADIUS * np.arcsin(np.sqrt(d))
     return h
+
 
 def manhattan(lon1, lat1, lon2, lat2):  # 2点曼哈顿距离计算, 单位km
     a = haversine(lon1, lat1, lon2, lat1)
@@ -581,6 +580,14 @@ def bearing(lng1, lat1, lng2, lat2):  # 方位计算
     y = np.sin(lng_delta_rad) * np.cos(lat2)
     x = np.cos(lat1) * np.sin(lat2) - np.sin(lat1) * np.cos(lat2) * np.cos(lng_delta_rad)
     return np.degrees(np.arctan2(y, x))
+
+
+def get_last_one_week_index(train):
+    train["i_loc"] = range(train.shape[0])
+    dt = pd.to_datetime(train["time_stamp"]).dt.day
+    valid_index = train[dt > 24]["i_loc"].values
+    train_index = train[dt <= 24]["i_loc"].values
+    return train_index, valid_index
 
 
 if __name__ == '__main__':
