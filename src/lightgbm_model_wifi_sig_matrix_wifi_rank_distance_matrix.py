@@ -438,7 +438,7 @@ def main_leave_one_week(offline, mall_ids=-1):
         other_train_wifi_feature = np.concatenate(other_train_wifi_features, axis=1)
         other_test_wifi_feature = np.concatenate(other_test_wifi_features, axis=1)
 
-        scala = 1
+        scala = 2
         pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)

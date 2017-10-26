@@ -16,10 +16,7 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.decomposition import PCA
 import lightgbm as lgb
-
-
-
-
+from sklearn.ensemble import RandomForestClassifier
 
 
 def main_leave_one_week(offline, mall_ids=-1):
@@ -33,7 +30,7 @@ def main_leave_one_week(offline, mall_ids=-1):
     offline_reals = []
     all_rowid = {}
     all_predicts = {}
-    kfold=1
+    kfold = 1
     for _ in range(kfold):
         offline_predicts.append({})
         offline_reals.append({})
@@ -159,18 +156,15 @@ def main_leave_one_week(offline, mall_ids=-1):
             _valid_y = y[_valid_index]
             _valid = lgb.Dataset(_valid_x, label=_valid_y, reference=_train)
 
-            bst = lgb.train(params,
-                            _train,
-                            n_round,
-                            valid_sets=_valid,
-                            early_stopping_rounds=early_stop_rounds)#early_stopping_rounds=early_stop_rounds
+            rf = RandomForestClassifier(n_estimators=1000,
+                                        n_jobs=-1,
+                                        verbose=1)
 
-            predict = np.argmax(bst.predict(_valid_x, num_iteration=bst.best_iteration), axis=1).astype(int)
+            predict = rf.predict(_valid_x)
             predict = label_encoder.inverse_transform(predict)
             offline_predicts[_index][mall_id] = predict
             offline_reals[_index][mall_id] = label_encoder.inverse_transform(_valid_y)
             _index += 1
-            best_iterations.append(bst.best_iteration)
         if not offline:  # 线上
             best_iteration = int(np.mean(best_iterations))
             train = lgb.Dataset(train_matrix, label=y)
@@ -225,7 +219,6 @@ def main_leave_one_week(offline, mall_ids=-1):
         save_result(result, path, None)
 
 
-
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=False) # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+    main_leave_one_week(offline=False)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
