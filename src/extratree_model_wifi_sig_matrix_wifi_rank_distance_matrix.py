@@ -17,9 +17,9 @@ from sklearn.model_selection import train_test_split, KFold
 from sklearn.decomposition import PCA
 from sklearn.ensemble import ExtraTreesClassifier
 from hyperopt import hp, fmin, tpe, rand, space_eval
-import os,yaml
+import os, yaml
 
-def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
+def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,defauld_scala = 1,use_default_scala = False):
     model_name = "et_leave_one_week_wifi_matrix_rank_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
@@ -34,6 +34,12 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         best_scala = yaml.load(open("../data/best_scala/best_scala_{}.yaml".format(model_name), "r"))
     else:
         best_scala = {}
+
+
+    if use_default_scala:
+        best_scala = {}
+
+
     kfold = 1
     for _ in range(kfold):
         offline_predicts.append({})
@@ -129,7 +135,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
                 _valid_y = y[_valid_index]
 
                 rf = ExtraTreesClassifier(n_estimators=n_estimetors,n_jobs=-1)
-                rf.fit(_train_x,_train_y)
+                rf.fit(_train_x, _train_y)
                 y_predict = rf.predict(_valid_x)
                 return -acc(y_predict, _valid_y)
 
@@ -142,11 +148,11 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
             best_scala[mall_id] = argsDict["scala"]
         else:
             if len(best_scala) == 0:
-                argsDict["scala"] = 1
+                argsDict["scala"] = defauld_scala
             else:
                 argsDict["scala"] = best_scala[mall_id]
 
-        scala = argsDict["scala"]
+        scala = float(argsDict["scala"])
         print "use scala:", scala
         pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
         train_matrix = pca.transform(train_matrix)
@@ -213,6 +219,10 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         exit(1)
 
     result["all_acc"] = np.mean(accs)
+
+    if len(best_scala) != 0:
+        scala = "hyperopt"
+
     path = "../result/offline/{}_f{}_es{}".format(model_name,
                                                   "num_class_{}".format(scala),
                                                   n_estimetors)
@@ -236,5 +246,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
 if __name__ == '__main__':
     # main(offline=False)
     main_leave_one_week(offline=False,
-                        mall_ids=-1,
-                        use_hyperopt=True)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+                        mall_ids=["m_968"],
+                        use_hyperopt=False,
+                        defauld_scala=0.5,
+                        use_default_scala=True)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]

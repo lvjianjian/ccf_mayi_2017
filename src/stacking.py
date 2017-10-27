@@ -1,26 +1,32 @@
 #!/usr/bin/env python
-# encoding=utf-8
+#encoding=utf-8
 
 """
 @Author: zhongjianlv
 
-@Create Date: 17-10-19, 22:37
+@Create Date: 17-10-26, 22:35
 
 @Description:
 
-@Update Date: 17-10-19, 22:37
+@Update Date: 17-10-26, 22:35
 """
 
+from mlxtend.classifier import StackingClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB
+from sklearn.ensemble import RandomForestClassifier,ExtraTreesClassifier
+from mlxtend.classifier import StackingClassifier
+from sklearn.linear_model import LogisticRegression
 from util import *
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split, KFold
-from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestClassifier
-from hyperopt import hp, fmin, tpe, rand, space_eval
 import os,yaml
+import lightgbm as lgb
+from hyperopt import fmin,hp,space_eval,tpe
+from sklearn.preprocessing import LabelEncoder
+from lightgbm.sklearn import LGBMClassifier
 
-def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2):
-    model_name = "rf_leave_one_week_wifi_matrix_rank_lonlat_matrix"
+
+def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=1, use_default_scala = False):
+    model_name = "lightgbm_leave_one_week_wifi_matrix_rank_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -33,6 +39,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
     if os.path.exists("../data/best_scala/best_scala_{}.yaml".format(model_name)):
         best_scala = yaml.load(open("../data/best_scala/best_scala_{}.yaml".format(model_name), "r"))
     else:
+        best_scala = {}
+    if use_default_scala:
         best_scala = {}
     kfold = 1
     for _ in range(kfold):
@@ -107,8 +115,28 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
         # test_dis_matrix = pca_dis.transform(test_dis_matrix)
         train_dis_matrix = distance_matrix
 
-        n_estimetors = 1000
+        # 模型参数
+        num_leaves = 35
+        learning_rate = 0.04
+        feature_fraction = 0.7
+        bagging_fraction = 0.8
+        bagging_freq = 5
+        params = {
+            'task': 'train',
+            'boosting_type': 'gbdt',
+            'objective': 'multiclass',
+            'metric': ['multi_error'],
+            'num_leaves': num_leaves,
+            'learning_rate': learning_rate,
+            'feature_fraction': feature_fraction,
+            'bagging_fraction': bagging_fraction,
+            'bagging_freq': bagging_freq,
+            'verbose': 0,
+            'num_class': num_class
 
+        }
+        n_round = 1000
+        early_stop_rounds = 15
         _train_index, _valid_index = get_last_one_week_index(train)
         argsDict = {}
         if use_hyperopt:
@@ -124,20 +152,25 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
                                                axis=1)
                 _train_x = _train_matrix[_train_index]
                 _train_y = y[_train_index]
+                _train = lgb.Dataset(_train_x, label=_train_y)
 
                 _valid_x = _train_matrix[_valid_index]
                 _valid_y = y[_valid_index]
+                _valid = lgb.Dataset(_valid_x, label=_valid_y, reference=_train)
 
-                rf = RandomForestClassifier(n_estimators=n_estimetors,n_jobs=-1)
-                rf.fit(_train_x, _train_y)
-                y_predict = rf.predict(_valid_x)
+                bst = lgb.train(params,
+                                _train,
+                                n_round,
+                                valid_sets=_valid,
+                                early_stopping_rounds=early_stop_rounds)
+                y_predict = np.argmax(bst.predict(_valid_x, num_iteration=bst.best_iteration), axis=1).astype(int)
                 return -acc(y_predict, _valid_y)
 
             space = {
                 "scala": hp.uniform("scala", 0.3, 8)
             }
 
-            best_sln = fmin(objective, space, algo=tpe.suggest, max_evals=12)
+            best_sln = fmin(objective, space, algo=tpe.suggest, max_evals=10)
             argsDict = space_eval(space, best_sln)
             best_scala[mall_id] = argsDict["scala"]
         else:
@@ -148,7 +181,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
 
         scala = argsDict["scala"]
         print "use scala:", scala
-        pca = PCA(n_components=int(num_class * scala)).fit(np.concatenate(train_matrix))
+        # pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
+        pca = PCA(n_components=int(num_class * scala)).fit(np.concatenate([train_matrix,test_matrix]))
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)
 
@@ -166,27 +200,46 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
         # kfold
         print "train", mall_id
 
+
+
         _index = 0
+        best_iterations = []
         for _train_index, _valid_index in [(_train_index, _valid_index)]:
             _train_x = train_matrix[_train_index]
             _train_y = y[_train_index]
+            _train = lgb.Dataset(_train_x, label=_train_y)
 
             _valid_x = train_matrix[_valid_index]
             _valid_y = y[_valid_index]
+            _valid = lgb.Dataset(_valid_x, label=_valid_y, reference=_train)
 
-            rf = RandomForestClassifier(n_estimators=n_estimetors,n_jobs=-1)
-            rf.fit(_train_x,_train_y)
 
-            predict = rf.predict(_valid_x)
+            clf1 = RandomForestClassifier(n_estimators=1000,n_jobs=-1,verbose=1)
+            clf2 = ExtraTreesClassifier(n_estimators=1000,n_jobs=-1,verbose=1)
+            clf3 = LGBMClassifier(params)
+            clf4 = LGBMClassifier(params)
+            sclf = StackingClassifier([clf1,clf2,clf3],clf4)
+            sclf.fit(_train_x,_train_y)
+
+
+            # bst = lgb.train(params,
+            #                 _train,
+            #                 n_round,
+            #                 valid_sets=_valid,
+            #                 early_stopping_rounds=early_stop_rounds)
+
+            predict = sclf.predict(_valid_x)
             predict = label_encoder.inverse_transform(predict)
             offline_predicts[_index][mall_id] = predict
             offline_reals[_index][mall_id] = label_encoder.inverse_transform(_valid_y)
             _index += 1
+            best_iterations.append(bst.best_iteration)
 
         if not offline:  # 线上
-            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
-            rf.fit(train_matrix, y)
-            predict = rf.predict(test_matrix)
+            best_iteration = int(np.mean(best_iterations))
+            train = lgb.Dataset(train_matrix, label=y)
+            bst = lgb.train(params, train, best_iteration)
+            predict = np.argmax(bst.predict(test_matrix, best_iteration), axis=1).astype(int)
             predict = label_encoder.inverse_transform(predict)
             all_predicts[mall_id] = predict
             all_rowid[mall_id] = test_all[np.in1d(test_all.index, test_index)].row_id.values
@@ -207,18 +260,21 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
         accs.append(_acc)
     print "all acc is", np.mean(accs)
 
-    if len(best_scala) != 0:
-        scala = "hyperopt"
+
 
     if len(mall_ids) < 50:
         exit(1)
 
     result["all_acc"] = np.mean(accs)
-    path = "../result/offline/{}_f{}_es{}".format(model_name,
-                                                  "num_class_{}".format(scala),
-                                                  n_estimetors)
+    path = "../result/offline/{}_f{}_lr{}_leaves{}_ff{}_bf{}_bfq{}_es{}".format(model_name,
+                                                                                "num_class_{}".format(scala),
+                                                                                learning_rate,
+                                                                                num_leaves,
+                                                                                feature_fraction,
+                                                                                bagging_fraction,
+                                                                                bagging_freq,
+                                                                                early_stop_rounds)
     save_acc(result, path, None)
-
 
     if use_hyperopt:
         yaml.dump(best_scala, open("../data/best_scala/best_scala_{}.yaml".format(model_name), "w"))
@@ -229,14 +285,31 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
         all_predict = np.concatenate(all_predicts.values())
         result = pd.DataFrame(data={"row_id": all_rowid, "shop_id": all_predict})
         result.sort_values(by="row_id", inplace=True)
-        path = "../result/online/{}_f{}_es{}".format(model_name,
-                                                     "num_class_{}".format(scala),
-                                                     n_estimetors)
+        path = "../result/online/{}_f{}_lr{}_leaves{}_ff{}_bf{}_bfq{}_es{}".format(model_name,
+                                                                                   "num_class_{}".format(scala),
+                                                                                   learning_rate,
+                                                                                   num_leaves,
+                                                                                   feature_fraction,
+                                                                                   bagging_fraction,
+                                                                                   bagging_freq,
+                                                                                   early_stop_rounds)
         save_result(result, path, None)
 
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=True,
-                        mall_ids=["m_8093", "m_690", "m_7168", "m_1375"],
-                        use_hyperopt=False)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+    main_leave_one_week(offline=False,
+                        mall_ids=-1,
+                        use_hyperopt=False,
+                        default_scala=2,
+                        use_default_scala=True)  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+
+
+clf1 = KNeighborsClassifier(n_neighbors=1)
+clf2 = RandomForestClassifier(random_state=1)
+clf3 = GaussianNB()
+lr = LogisticRegression()
+
+sclf = StackingClassifier(classifiers=[clf1, clf2, clf3],
+                          meta_classifier=lr)
+

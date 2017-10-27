@@ -125,7 +125,7 @@ def main(offline):
             'task': 'train',
             'boosting_type': 'gbdt',
             'objective': 'multiclass',
-            'metric': ['multi_logloss', 'multi_error'],
+            'metric': [ 'multi_error'],
             'num_leaves': num_leaves,
             'learning_rate': learning_rate,
             'feature_fraction': feature_fraction,
@@ -294,7 +294,7 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
             'task': 'train',
             'boosting_type': 'gbdt',
             'objective': 'multiclass',
-            'metric': ['multi_logloss', 'multi_error'],
+            'metric': [ 'multi_error'],
             'num_leaves': num_leaves,
             'learning_rate': learning_rate,
             'feature_fraction': feature_fraction,
@@ -390,7 +390,7 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
         save_result(result, path, None)
 
 
-def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
+def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=1, use_default_scala = False):
     model_name = "lightgbm_leave_one_week_wifi_matrix_rank_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
@@ -404,6 +404,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
     if os.path.exists("../data/best_scala/best_scala_{}.yaml".format(model_name)):
         best_scala = yaml.load(open("../data/best_scala/best_scala_{}.yaml".format(model_name), "r"))
     else:
+        best_scala = {}
+    if use_default_scala:
         best_scala = {}
     kfold = 1
     for _ in range(kfold):
@@ -488,7 +490,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
             'task': 'train',
             'boosting_type': 'gbdt',
             'objective': 'multiclass',
-            'metric': ['multi_logloss', 'multi_error'],
+            'metric': ['multi_error'],
             'num_leaves': num_leaves,
             'learning_rate': learning_rate,
             'feature_fraction': feature_fraction,
@@ -499,7 +501,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
 
         }
         n_round = 1000
-        early_stop_rounds = 20
+        early_stop_rounds = 15
         _train_index, _valid_index = get_last_one_week_index(train)
         argsDict = {}
         if use_hyperopt:
@@ -533,18 +535,19 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
                 "scala": hp.uniform("scala", 0.3, 8)
             }
 
-            best_sln = fmin(objective, space, algo=tpe.suggest, max_evals=12)
+            best_sln = fmin(objective, space, algo=tpe.suggest, max_evals=10)
             argsDict = space_eval(space, best_sln)
             best_scala[mall_id] = argsDict["scala"]
         else:
             if len(best_scala) == 0:
-                argsDict["scala"] = 1
+                argsDict["scala"] = default_scala
             else:
                 argsDict["scala"] = best_scala[mall_id]
 
         scala = argsDict["scala"]
         print "use scala:", scala
-        pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
+        # pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
+        pca = PCA(n_components=int(num_class * scala)).fit(np.concatenate([train_matrix,test_matrix]))
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)
 
@@ -649,6 +652,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=False,
-                        mall_ids=-1,
-                        use_hyperopt=True)  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+    main_leave_one_week(offline=True,
+                        mall_ids=["m_1375"],
+                        use_hyperopt=False,
+                        default_scala=2,
+                        use_default_scala=True)  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
