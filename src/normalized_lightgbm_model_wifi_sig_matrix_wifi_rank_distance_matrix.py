@@ -666,5 +666,5 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
 if __name__ == '__main__':
     # main(offline=False)
     main_leave_one_week(offline=False,
-                        mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"],
+                        mall_ids=["m_7168"],
                         use_hyperopt=False)  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
