@@ -57,11 +57,14 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         preprocess_basic_wifi(train)
         preprocess_basic_wifi(test)
         sorted_wifi = get_sorted_wifi([train, test])
-        _split = 50
+        _split = 1
         for _index in range(len(sorted_wifi), 0, -1):
             if sorted_wifi[_index - 1][1] >= _split:
                 break
         sorted_wifi = sorted_wifi[:_index]
+
+        train_matrix = train_matrix[:, :_index]
+        test_matrix = test_matrix[:, :_index]
 
         d = rank_sorted_wifi(sorted_wifi)
         other_train_wifi_features = []
@@ -103,13 +106,53 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         n_estimetors = 1000
         scala = 2
 
-        # print "use scala:", scala
-        # pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
-        # train_matrix = pca.transform(train_matrix)
-        # test_matrix = pca.transform(test_matrix)
+        print "use scala:", scala
+        pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
+        train_matrix = pca.transform(train_matrix)
+        test_matrix = pca.transform(test_matrix)
 
-        train_matrix = other_train_wifi_feature
-        test_matrix = other_test_wifi_feature
+        # distance_matrix
+        # 加入经纬度 直接经纬度效果很差
+        train_lonlats = train[["longitude", "latitude"]].values
+        test_lonlats = test[["longitude", "latitude"]].values
+        # 用户经纬度与各个商店的距离矩阵
+        d = rank_one(train, "shop_id")
+        verctors = []
+        for _s, _index in d.items():
+            _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
+            _shop = np.tile(_shop, (train_lonlats.shape[0], 1))
+            verctors.append(
+                    haversine(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+            # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+        distance_matrix = np.concatenate(verctors, axis=1)
+
+        verctors = []
+        for _s, _index in d.items():
+            _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
+            _shop = np.tile(_shop, (test_lonlats.shape[0], 1))
+            verctors.append(
+                    haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+            # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+        test_dis_matrix = np.concatenate(verctors, axis=1)
+
+        pca_dis_scala = 3
+        pca_dis = PCA(n_components=int(round(num_class / pca_dis_scala))).fit(distance_matrix)
+        distance_matrix = pca_dis.transform(distance_matrix)
+        test_dis_matrix = pca_dis.transform(test_dis_matrix)
+        train_dis_matrix = distance_matrix
+
+        lonlat_pca = PCA().fit(np.concatenate([train_lonlats, test_lonlats]))
+        _p_train_pcas = lonlat_pca.transform(train_lonlats)
+        _p_test_pcas = lonlat_pca.transform(test_lonlats)
+
+        train_matrix = np.concatenate([train_dis_matrix,
+                                       # train_lonlats,
+                                       _p_train_pcas],
+                                      axis=1)
+        test_matrix = np.concatenate([test_dis_matrix,
+                                      # test_lonlats,
+                                      _p_test_pcas],
+                                     axis=1)
 
         # train_matrix = np.concatenate([train_matrix,
         #                                train_dis_matrix,
@@ -135,7 +178,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             _valid_x = train_matrix[_valid_index]
             _valid_y = y[_valid_index]
 
-            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, max_features=None)
+            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
             rf.fit(_train_x, _train_y)
 
             predict = rf.predict(_valid_x)

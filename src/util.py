@@ -153,8 +153,7 @@ def preprocess_lonlat(train, test):
         test.loc[_part_test[~np.in1d(_part_test.index, reasonable_part_test.index)].index, "lon_lat_in_shop"] = 0
 
         # 对经纬度进行PCA变换
-        pca = PCA().fit(
-                np.concatenate([_part_train[["longitude", "latitude"]].values, _part_test[["longitude", "latitude"]]]))
+        pca = PCA().fit(np.concatenate([_part_train[["longitude", "latitude"]].values, _part_test[["longitude", "latitude"]]]))
         _p_train_pcas = pca.transform(_part_train[["longitude", "latitude"]].values)
         _p_test_pcas = pca.transform(_part_test[["longitude", "latitude"]].values)
         train.loc[_part_train.index, "pca_lon"] = _p_train_pcas[:, 0]

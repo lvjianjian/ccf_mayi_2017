@@ -17,10 +17,11 @@ from sklearn.model_selection import train_test_split, KFold
 from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
 from hyperopt import hp, fmin, tpe, rand, space_eval
-import os,yaml
+import os, yaml
 
-def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2):
-    model_name = "rf_leave_one_week_wifi_matrix_rank_lonlat_matrix"
+
+def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=2):
+    model_name = "rf_leave_one_week_wifi_matrix_rank2_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -53,26 +54,53 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
         # wifi rank info
         train = train_all[train_all.mall_id == mall_id]
         test = test_all[test_all.mall_id == mall_id]
+
+        print "shops", len(shops)
+        num_class = len(train.shop_id.unique())
+        print "train shops", num_class
+
         preprocess_basic_wifi(train)
         preprocess_basic_wifi(test)
-        sorted_wifi = get_sorted_wifi([train, test])
-        d = rank_sorted_wifi(sorted_wifi)
         other_train_wifi_features = []
         other_test_wifi_features = []
-        test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank = use_wifi_in_wifi_rank(test, train, d)
-        other_train_wifi_features.append(train_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-        other_test_wifi_features.append(test_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-        # print train_use_wifi_in_wifi_rank
-        for _top in range(10):
-            test_no_use_wifi_in_wifi_rank, train_no_use_wifi_in_wifi_rank = no_use_wifi_in_wifi_rank(test,
-                                                                                                     train,
-                                                                                                     d,
-                                                                                                     _top)
-            other_train_wifi_features.append(train_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-            other_test_wifi_features.append(test_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+        sorted_wifi_all = get_sorted_wifi([train, test])
 
-        other_train_wifi_feature = np.concatenate(other_train_wifi_features, axis=1)
-        other_test_wifi_feature = np.concatenate(other_test_wifi_features, axis=1)
+
+
+        take = 10
+        for _split in [25, 50, 75]:
+            for _index in range(len(sorted_wifi_all), 0, -1):
+                if sorted_wifi_all[_index - 1][1] >= _split:
+                    break
+            sorted_wifi = sorted_wifi_all[:_index]
+            d = rank_sorted_wifi(sorted_wifi)
+
+            # use
+            test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank = use_wifi_in_wifi_rank2(test, train, d)
+            other_train_wifi_features.append(train_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+            other_test_wifi_features.append(test_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+
+
+            # no use
+            # for _top in range(10):
+            #     test_no_use_wifi_in_wifi_rank, train_no_use_wifi_in_wifi_rank = no_use_wifi_in_wifi_rank(test,
+            #                                                                                              train,
+            #                                                                                              d,
+            #                                                                                              _top)
+            #     other_train_wifi_features.append(train_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+            #     other_test_wifi_features.append(test_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+
+            # all
+            for _top in range(take):
+                test_all_wifi_in_wifi_rank, train_all_wifi_in_wifi_rank = all_wifi_in_wifi_rank2(test,
+                                                                                                 train,
+                                                                                                 d,
+                                                                                                 _top)
+                other_train_wifi_features.append(train_all_wifi_in_wifi_rank.values.reshape((-1, 1)))
+                other_test_wifi_features.append(test_all_wifi_in_wifi_rank.values.reshape((-1, 1)))
+
+            other_train_wifi_feature = np.concatenate(other_train_wifi_features, axis=1)
+            other_test_wifi_feature = np.concatenate(other_test_wifi_features, axis=1)
 
         test_index = test_cache[0]
         label_encoder = LabelEncoder().fit(shops)
@@ -102,13 +130,19 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         test_dis_matrix = np.concatenate(verctors, axis=1)
 
-        # pca_dis = PCA(n_components=int(round(num_class / 2))).fit(distance_matrix)
-        # distance_matrix = pca_dis.transform(distance_matrix)
-        # test_dis_matrix = pca_dis.transform(test_dis_matrix)
+        pca_dis_scala = 3
+        pca_dis = PCA(n_components=int(round(num_class / pca_dis_scala))).fit(distance_matrix)
+        distance_matrix = pca_dis.transform(distance_matrix)
+        test_dis_matrix = pca_dis.transform(test_dis_matrix)
         train_dis_matrix = distance_matrix
 
-        n_estimetors = 1000
+        # lonlat_pca = PCA().fit(np.concatenate([train_lonlats, test_lonlats]))
+        # _p_train_pcas = lonlat_pca.transform(train_lonlats)
+        # _p_test_pcas = lonlat_pca.transform(test_lonlats)
 
+
+        n_estimetors = 1000
+        max_features = "auto"
         _train_index, _valid_index = get_last_one_week_index(train)
         argsDict = {}
         if use_hyperopt:
@@ -128,7 +162,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
                 _valid_x = _train_matrix[_valid_index]
                 _valid_y = y[_valid_index]
 
-                rf = RandomForestClassifier(n_estimators=n_estimetors,n_jobs=-1)
+                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, max_features=max_features)
                 rf.fit(_train_x, _train_y)
                 y_predict = rf.predict(_valid_x)
                 return -acc(y_predict, _valid_y)
@@ -148,16 +182,25 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
 
         scala = argsDict["scala"]
         print "use scala:", scala
-        pca = PCA(n_components=int(num_class * scala)).fit(np.concatenate(train_matrix))
+        pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)
 
+
+        # 时间
+        # preprocess_basic_time(train)
+        # preprocess_basic_time(test)
+        # train_time_features = train[["weekday","hour","is_weekend"]].values
+        # test_time_features = test[["weekday","hour","is_weekend"]].values
+
         train_matrix = np.concatenate([train_matrix,
                                        train_dis_matrix,
+                                       # _p_train_pcas,
                                        other_train_wifi_feature],
                                       axis=1)
         test_matrix = np.concatenate([test_matrix,
                                       test_dis_matrix,
+                                      # _p_test_pcas,
                                       other_test_wifi_feature],
                                      axis=1)
 
@@ -174,8 +217,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
             _valid_x = train_matrix[_valid_index]
             _valid_y = y[_valid_index]
 
-            rf = RandomForestClassifier(n_estimators=n_estimetors,n_jobs=-1)
-            rf.fit(_train_x,_train_y)
+            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, max_features=max_features)
+            rf.fit(_train_x, _train_y)
 
             predict = rf.predict(_valid_x)
             predict = label_encoder.inverse_transform(predict)
@@ -184,7 +227,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
             _index += 1
 
         if not offline:  # 线上
-            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
+            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, max_features=max_features)
             rf.fit(train_matrix, y)
             predict = rf.predict(test_matrix)
             predict = label_encoder.inverse_transform(predict)
@@ -214,29 +257,31 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False,default_scala=2
         exit(1)
 
     result["all_acc"] = np.mean(accs)
-    path = "../result/offline/{}_f{}_es{}".format(model_name,
-                                                  "num_class_{}".format(scala),
-                                                  n_estimetors)
+    path = "../result/offline/{}_{}_{}_es{}".format(model_name,
+                                                    "pca_scala_{}".format(scala),
+                                                    "pca_dis_scala_{}".format(pca_dis_scala),
+                                                    n_estimetors)
     save_acc(result, path, None)
-
 
     if use_hyperopt:
         yaml.dump(best_scala, open("../data/best_scala/best_scala_{}.yaml".format(model_name), "w"))
-
 
     if not offline:
         all_rowid = np.concatenate(all_rowid.values())
         all_predict = np.concatenate(all_predicts.values())
         result = pd.DataFrame(data={"row_id": all_rowid, "shop_id": all_predict})
         result.sort_values(by="row_id", inplace=True)
-        path = "../result/online/{}_f{}_es{}".format(model_name,
-                                                     "num_class_{}".format(scala),
-                                                     n_estimetors)
+        path = "../result/online/{}_{}_{}_es{}".format(model_name,
+                                                       "num_class_{}".format(scala),
+                                                       "pca_dis_scala_{}".format(pca_dis_scala),
+                                                       n_estimetors)
         save_result(result, path, None)
 
 
 if __name__ == '__main__':
     # main(offline=False)
     main_leave_one_week(offline=True,
-                        mall_ids=["m_8093", "m_690", "m_7168", "m_1375"],
-                        use_hyperopt=False)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+                        mall_ids=["m_8093", "m_4572", "m_6803", "m_9068", "m_2270", "m_2467"],
+                        # "m_8093", "m_4572", "m_6803"
+                        use_hyperopt=False,
+                        default_scala=2)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
