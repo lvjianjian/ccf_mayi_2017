@@ -47,6 +47,20 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         train_matrix = train_cache[2]
         test_matrix = test_cache[2]
 
+
+        strong_sig_index = zip(range(train_matrix.shape[0]),
+                               list((train_matrix > -70).sum(axis=0)))
+        strong_sig_index = sorted(strong_sig_index, key=lambda x: -x[1])
+        strong_sig_worst = 5
+        for _index in range(len(strong_sig_index)):
+            if strong_sig_index[_index][1] < strong_sig_worst:
+                break
+        strong_sig_choose = _index - 1
+        choose_strong_wifi_index = [_wi[0] for _wi in strong_sig_index[:strong_sig_choose]]
+        # print choose_strong_wifi_index
+        train_strong_matrix = train_matrix[:, choose_strong_wifi_index]
+        test_strong_matrix = test_matrix[:, choose_strong_wifi_index]
+
         # 将wifi 信号加上每个sample的最大wifi信号， 屏蔽个体之间接收wifi信号的差异
         train_matrix = np.tile(-train_matrix.max(axis=1, keepdims=True), (1, train_matrix.shape[1])) + train_matrix
         test_matrix = np.tile(-test_matrix.max(axis=1, keepdims=True), (1, test_matrix.shape[1])) + test_matrix
@@ -145,14 +159,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         _p_train_pcas = lonlat_pca.transform(train_lonlats)
         _p_test_pcas = lonlat_pca.transform(test_lonlats)
 
-        train_matrix = np.concatenate([train_dis_matrix,
-                                       # train_lonlats,
-                                       _p_train_pcas],
-                                      axis=1)
-        test_matrix = np.concatenate([test_dis_matrix,
-                                      # test_lonlats,
-                                      _p_test_pcas],
-                                     axis=1)
+        train_matrix = train_strong_matrix
+        test_matrix = test_strong_matrix
 
         # train_matrix = np.concatenate([train_matrix,
         #                                train_dis_matrix,

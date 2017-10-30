@@ -20,8 +20,8 @@ from hyperopt import hp, fmin, tpe, rand, space_eval
 import os, yaml
 
 
-def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=2):
-    model_name = "rf_leave_one_week_wifi_matrix_rank2_lonlat_matrix"
+def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=2, save_offline_predict=False):
+    model_name = "rf_leave_one_week_wifi_matrix_strong_wifi_matrix_rank2_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -47,6 +47,27 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         train_matrix = train_cache[2]
         test_matrix = test_cache[2]
 
+
+        choose_strong_wifi_index_set = set()
+
+        for _sig_max, _sig_num in zip([-70], [5]):
+            strong_sig_index = zip(range(train_matrix.shape[0]),
+                                   list((train_matrix > _sig_max).sum(axis=0)))
+            strong_sig_index = sorted(strong_sig_index, key=lambda x: -x[1])
+            strong_sig_worst = _sig_num
+            for _index in range(len(strong_sig_index)):
+                if strong_sig_index[_index][1] < strong_sig_worst:
+                    break
+            strong_sig_choose = _index - 1
+            choose_strong_wifi_index = [_wi[0] for _wi in strong_sig_index[:strong_sig_choose]]
+
+            choose_strong_wifi_index_set = choose_strong_wifi_index_set.union(set(choose_strong_wifi_index))
+            print len(choose_strong_wifi_index_set)
+        # print choose_strong_wifi_index
+        choose_strong_wifi_index = list(choose_strong_wifi_index_set)
+        train_strong_matrix = train_matrix[:, choose_strong_wifi_index]
+        test_strong_matrix = test_matrix[:, choose_strong_wifi_index]
+
         # 将wifi 信号加上每个sample的最大wifi信号， 屏蔽个体之间接收wifi信号的差异
         train_matrix = np.tile(-train_matrix.max(axis=1, keepdims=True), (1, train_matrix.shape[1])) + train_matrix
         test_matrix = np.tile(-test_matrix.max(axis=1, keepdims=True), (1, test_matrix.shape[1])) + test_matrix
@@ -65,8 +86,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         other_test_wifi_features = []
         sorted_wifi_all = get_sorted_wifi([train, test])
 
-
-
         take = 10
         for _split in [25, 50, 75]:
             for _index in range(len(sorted_wifi_all), 0, -1):
@@ -79,7 +98,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank = use_wifi_in_wifi_rank2(test, train, d)
             other_train_wifi_features.append(train_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
             other_test_wifi_features.append(test_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-
 
             # no use
             # for _top in range(10):
@@ -141,7 +159,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         # _p_test_pcas = lonlat_pca.transform(test_lonlats)
 
 
-        n_estimetors = 1000
+        n_estimetors = 1200
         max_features = "auto"
         _train_index, _valid_index = get_last_one_week_index(train)
         argsDict = {}
@@ -186,7 +204,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)
 
-
         # 时间
         # preprocess_basic_time(train)
         # preprocess_basic_time(test)
@@ -195,18 +212,17 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
         train_matrix = np.concatenate([train_matrix,
                                        train_dis_matrix,
-                                       # _p_train_pcas,
+                                       train_strong_matrix,
                                        other_train_wifi_feature],
                                       axis=1)
         test_matrix = np.concatenate([test_matrix,
                                       test_dis_matrix,
-                                      # _p_test_pcas,
+                                      test_strong_matrix,
                                       other_test_wifi_feature],
                                      axis=1)
 
         print "num_class", num_class
 
-        # kfold
         print "train", mall_id
 
         _index = 0
@@ -242,6 +258,12 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             accs.append(_acc)
         print _mall_id + "'s acc is", np.mean(accs)
         result[_mall_id] = np.mean(accs)
+
+        if save_offline_predict:
+            pd.DataFrame({"predict": offline_predicts[_index][_mall_id],
+                          "real": offline_reals[_index][_mall_id]}).to_csv("../result/offline_predict/{}_{}.csv".format(_mall_id,
+                                                                                                                        _index),
+                                                                           index=None)
     accs = []
     for _index in range(kfold):
         all_predict = np.concatenate(offline_reals[_index].values())
@@ -281,7 +303,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 if __name__ == '__main__':
     # main(offline=False)
     main_leave_one_week(offline=True,
-                        mall_ids=["m_8093", "m_4572", "m_6803", "m_9068", "m_2270", "m_2467"],
+                        mall_ids=["m_7168","m_2715","m_6803"],
                         # "m_8093", "m_4572", "m_6803"
                         use_hyperopt=False,
-                        default_scala=2)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+                        default_scala=2,
+                        save_offline_predict=False)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]

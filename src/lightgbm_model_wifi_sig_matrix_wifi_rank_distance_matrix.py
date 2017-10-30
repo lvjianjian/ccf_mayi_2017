@@ -391,7 +391,7 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
 
 
 def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=1, use_default_scala = False):
-    model_name = "lightgbm_leave_one_week_wifi_matrix_rank(use2_all2)_lonlat_matrix"
+    model_name = "lightgbm_leave_one_week_wifi_matrix_strong_wifi_matrix_rank2_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -401,12 +401,10 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
     offline_reals = []
     all_rowid = {}
     all_predicts = {}
-    train_size= {}
+    train_size={}
     if os.path.exists("../data/best_scala/best_scala_{}.yaml".format(model_name)):
         best_scala = yaml.load(open("../data/best_scala/best_scala_{}.yaml".format(model_name), "r"))
     else:
-        best_scala = {}
-    if use_default_scala:
         best_scala = {}
     kfold = 1
     for _ in range(kfold):
@@ -415,10 +413,31 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
     for _index, mall_id in enumerate(mall_ids):
         print "train: ", mall_id, " {}/{}".format(_index, len(mall_ids))
         shops = shop_info[shop_info.mall_id == mall_id].shop_id.unique()
-
+        num_class = len(shops)
         df, train_cache, test_cache = get_wifi_cache(mall_id)
         train_matrix = train_cache[2]
         test_matrix = test_cache[2]
+
+
+        choose_strong_wifi_index_set = set()
+
+        for _sig_max, _sig_num in zip([-70], [5]):
+            strong_sig_index = zip(range(train_matrix.shape[0]),
+                                   list((train_matrix > _sig_max).sum(axis=0)))
+            strong_sig_index = sorted(strong_sig_index, key=lambda x: -x[1])
+            strong_sig_worst = _sig_num
+            for _index in range(len(strong_sig_index)):
+                if strong_sig_index[_index][1] < strong_sig_worst:
+                    break
+            strong_sig_choose = _index - 1
+            choose_strong_wifi_index = [_wi[0] for _wi in strong_sig_index[:strong_sig_choose]]
+
+            choose_strong_wifi_index_set = choose_strong_wifi_index_set.union(set(choose_strong_wifi_index))
+            print len(choose_strong_wifi_index_set)
+        # print choose_strong_wifi_index
+        choose_strong_wifi_index = list(choose_strong_wifi_index_set)
+        train_strong_matrix = train_matrix[:, choose_strong_wifi_index]
+        test_strong_matrix = test_matrix[:, choose_strong_wifi_index]
 
         # 将wifi 信号加上每个sample的最大wifi信号， 屏蔽个体之间接收wifi信号的差异
         train_matrix = np.tile(-train_matrix.max(axis=1, keepdims=True), (1, train_matrix.shape[1])) + train_matrix
@@ -436,9 +455,9 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         preprocess_basic_wifi(test)
         other_train_wifi_features = []
         other_test_wifi_features = []
-
         sorted_wifi_all = get_sorted_wifi([train, test])
 
+        take = 10
         for _split in [25, 50, 75]:
             for _index in range(len(sorted_wifi_all), 0, -1):
                 if sorted_wifi_all[_index - 1][1] >= _split:
@@ -446,8 +465,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             sorted_wifi = sorted_wifi_all[:_index]
             d = rank_sorted_wifi(sorted_wifi)
 
-
-            #use
+            # use
             test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank = use_wifi_in_wifi_rank2(test, train, d)
             other_train_wifi_features.append(train_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
             other_test_wifi_features.append(test_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
@@ -462,11 +480,11 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             #     other_test_wifi_features.append(test_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
 
             # all
-            for _top in range(10):
+            for _top in range(take):
                 test_all_wifi_in_wifi_rank, train_all_wifi_in_wifi_rank = all_wifi_in_wifi_rank2(test,
-                                                                                                train,
-                                                                                                d,
-                                                                                                _top)
+                                                                                                 train,
+                                                                                                 d,
+                                                                                                 _top)
                 other_train_wifi_features.append(train_all_wifi_in_wifi_rank.values.reshape((-1, 1)))
                 other_test_wifi_features.append(test_all_wifi_in_wifi_rank.values.reshape((-1, 1)))
 
@@ -501,9 +519,10 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         test_dis_matrix = np.concatenate(verctors, axis=1)
 
-        # pca_dis = PCA(n_components=int(round(num_class / 5))).fit(distance_matrix)
-        # distance_matrix = pca_dis.transform(distance_matrix)
-        # test_dis_matrix = pca_dis.transform(test_dis_matrix)
+        pca_dis_scala = 3
+        pca_dis = PCA(n_components=int(round(num_class / pca_dis_scala))).fit(distance_matrix)
+        distance_matrix = pca_dis.transform(distance_matrix)
+        test_dis_matrix = pca_dis.transform(test_dis_matrix)
         train_dis_matrix = distance_matrix
 
         # 模型参数
@@ -572,18 +591,26 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         scala = argsDict["scala"]
         print "use scala:", scala
         pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
-        # pca = PCA(n_components=int(num_class * scala)).fit(np.concatenate([train_matrix,test_matrix]))
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)
 
+        # 时间
+        # preprocess_basic_time(train)
+        # preprocess_basic_time(test)
+        # train_time_features = train[["weekday","hour","is_weekend"]].values
+        # test_time_features = test[["weekday","hour","is_weekend"]].values
+
         train_matrix = np.concatenate([train_matrix,
                                        train_dis_matrix,
+                                       train_strong_matrix,
                                        other_train_wifi_feature],
                                       axis=1)
         test_matrix = np.concatenate([test_matrix,
                                       test_dis_matrix,
+                                      test_strong_matrix,
                                       other_test_wifi_feature],
                                      axis=1)
+
 
         print "num_class", num_class
 
