@@ -17,6 +17,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.decomposition import PCA
 import lightgbm as lgb
+from sklearn.preprocessing import OneHotEncoder
 from hyperopt import hp, fmin, tpe, rand, space_eval
 import yaml
 import os
@@ -78,6 +79,8 @@ def main(offline):
 
         # distance_matrix
         # 加入经纬度 直接经纬度效果很差
+
+
         train_lonlats = train[["longitude", "latitude"]].values
         test_lonlats = test[["longitude", "latitude"]].values
         # 用户经纬度与各个商店的距离矩阵
@@ -89,6 +92,7 @@ def main(offline):
             verctors.append(
                     haversine(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+        
         distance_matrix = np.concatenate(verctors, axis=1)
 
         verctors = []
@@ -413,6 +417,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         offline_predicts.append({})
         offline_reals.append({})
     min_max_scaler = MinMaxScaler()
+    onehot_enc = OneHotEncoder().fit([[1],[2],[3],[4],[5]])
     for _index, mall_id in enumerate(mall_ids):
         print "train: ", mall_id, " {}/{}".format(_index, len(mall_ids))
         shops = shop_info[shop_info.mall_id == mall_id].shop_id.unique()
@@ -421,21 +426,25 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
 
         train_matrix = train_cache[2]
         test_matrix = test_cache[2]
-        train_indexes = [np.where(x==-115) for x in train_matrix]
-        for i in range(len(train_matrix)):
-            train_matrix[train_indexes[i]] = min_max_scaler.fit_transform(train_matrix[train_indexes[i]])
-        test_indexes = [np.where(x==-115) for x in test_matrix]
-        for i in range(len(test_matrix)):
-            test_matrix[test_indexes[i]] = min_max_scaler.fit_transform(test_matrix[test_indexes[i]])
-        train_matrix = np.transpose(min_max_scaler.fit_transform(np.transpose(train_matrix)
-                                                                 )
-                                    )
-        test_matrix = np.transpose(min_max_scaler.fit_transform(np.transpose(test_matrix)
-                                                                )
-                                   )
+        print("prepare data..")
+        # train_indexes = [np.where(x!=-115) for x in train_matrix]
+        # for i in range(len(train_matrix)):
+        #     print(i)
+        #     train_matrix[train_indexes[i]] = min_max_scaler.fit_transform(train_matrix[train_indexes[i]])
+        # test_indexes = [np.where(x!=-115) for x in test_matrix]
+        # for i in range(len(test_matrix)):
+        #     test_matrix[test_indexes[i]] = min_max_scaler.fit_transform(test_matrix[test_indexes[i]])
+        # print("finish preparing data..")
+
+        # train_matrix = np.transpose(min_max_scaler.fit_transform(np.transpose(train_matrix)
+        #                                                          )
+        #                             )
+        # test_matrix = np.transpose(min_max_scaler.fit_transform(np.transpose(test_matrix)
+        #                                                         )
+        #                            )
         # 将wifi 信号加上每个sample的最大wifi信号， 屏蔽个体之间接收wifi信号的差异
-        # train_matrix = np.tile(-train_matrix.max(axis=1, keepdims=True), (1, train_matrix.shape[1])) + train_matrix
-        # test_matrix = np.tile(-test_matrix.max(axis=1, keepdims=True), (1, test_matrix.shape[1])) + test_matrix
+        train_matrix = np.tile(-train_matrix.max(axis=1, keepdims=True), (1, train_matrix.shape[1])) + train_matrix
+        test_matrix = np.tile(-test_matrix.max(axis=1, keepdims=True), (1, test_matrix.shape[1])) + test_matrix
 
         # wifi rank info
         train = train_all[train_all.mall_id == mall_id]
@@ -467,6 +476,42 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
 
         # distance_matrix
         # 加入经纬度 直接经纬度效果很差
+        time = train["time_stamp"].values
+        train_time_level = []
+        for t in time:
+            if int(t.split()[1][:2])>=0 and int(t.split()[1][:2])<7:
+                train_time_level.append(list(onehot_enc.transform([[1]]).toarray()[0]))
+            
+            if int(t.split()[1][:2])>=7 and int(t.split()[1][:2])<11:
+                train_time_level.append(list(onehot_enc.transform([[2]]).toarray()[0]))
+            
+            if int(t.split()[1][:2])>=11 and int(t.split()[1][:2])<14:
+                train_time_level.append(list(onehot_enc.transform([[3]]).toarray()[0]))
+
+            if int(t.split()[1][:2])>=14 and int(t.split()[1][:2])<18:
+                train_time_level.append(list(onehot_enc.transform([[4]]).toarray()[0]))
+
+            if int(t.split()[1][:2])>=18 and int(t.split()[1][:2])<=23:
+                train_time_level.append(list(onehot_enc.transform([[5]]).toarray()[0]))
+
+        time = test["time_stamp"].values
+        test_time_level = []
+        for t in time:
+            if int(t.split()[1][:2])>=0 and int(t.split()[1][:2])<7:
+                test_time_level.append(list(onehot_enc.transform([[1]]).toarray()[0])) 
+            
+            if int(t.split()[1][:2])>=7 and int(t.split()[1][:2])<11:
+                test_time_level.append(list(onehot_enc.transform([[2]]).toarray()[0]))
+            
+            if int(t.split()[1][:2])>=11 and int(t.split()[1][:2])<14:
+                test_time_level.append(list(onehot_enc.transform([[3]]).toarray()[0])) 
+            
+            if int(t.split()[1][:2])>=14 and int(t.split()[1][:2])<18:
+                test_time_level.append(list(onehot_enc.transform([[4]]).toarray()[0]))
+            
+            if int(t.split()[1][:2])>=18 and int(t.split()[1][:2])<=23:
+                test_time_level.append(list(onehot_enc.transform([[5]]).toarray()[0]))
+
         train_lonlats = train[["longitude", "latitude"]].values
         test_lonlats = test[["longitude", "latitude"]].values
         # 用户经纬度与各个商店的距离矩阵
@@ -563,14 +608,19 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)
-
+        train_time_level = np.array(train_time_level)
+        test_time_level = np.array(test_time_level)
         train_matrix = np.concatenate([train_matrix,
                                        train_dis_matrix,
-                                       other_train_wifi_feature],
+                                       other_train_wifi_feature,
+                                       train_time_level
+                                       ],
                                       axis=1)
         test_matrix = np.concatenate([test_matrix,
                                       test_dis_matrix,
-                                      other_test_wifi_feature],
+                                      other_test_wifi_feature,
+                                      test_time_level
+                                      ],
                                      axis=1)
 
         print "num_class", num_class
@@ -633,7 +683,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         exit(1)
 
     result["all_acc"] = np.mean(accs)
-    path = "../result/offline/{}_f{}_lr{}_leaves{}_ff{}_bf{}_bfq{}_es{}".format(model_name,
+    path = "../result/offline/1028_{}_f{}_lr{}_leaves{}_ff{}_bf{}_bfq{}_es{}".format(model_name,
                                                                                 "num_class_{}".format(scala),
                                                                                 learning_rate,
                                                                                 num_leaves,
@@ -652,7 +702,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         all_predict = np.concatenate(all_predicts.values())
         result = pd.DataFrame(data={"row_id": all_rowid, "shop_id": all_predict})
         result.sort_values(by="row_id", inplace=True)
-        path = "../result/online/1027_{}_f{}_lr{}_leaves{}_ff{}_bf{}_bfq{}_es{}".format(model_name,
+        path = "../result/online/1028_{}_f{}_lr{}_leaves{}_ff{}_bf{}_bfq{}_es{}".format(model_name,
                                                                                    "num_class_{}".format(scala),
                                                                                    learning_rate,
                                                                                    num_leaves,
@@ -660,11 +710,14 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
                                                                                    bagging_fraction,
                                                                                    bagging_freq,
                                                                                    early_stop_rounds)
+
         save_result(result, path, None)
 
 
 if __name__ == '__main__':
-    # main(offline=False)
+
     main_leave_one_week(offline=False,
-                        mall_ids=["m_7168"],
+                        
+                        mall_ids= -1,
+                        
                         use_hyperopt=False)  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
