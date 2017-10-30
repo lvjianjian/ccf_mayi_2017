@@ -418,10 +418,23 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
         shops = shop_info[shop_info.mall_id == mall_id].shop_id.unique()
         num_class = len(shops)
         df, train_cache, test_cache = get_wifi_cache(mall_id)
+
         train_matrix = train_cache[2]
         test_matrix = test_cache[2]
-        train_matrix = np.transpose(min_max_scaler.fit_transform(np.transpose(train_matrix)))
-        test_matrix = np.transpose(min_max_scaler.fit_transform(np.transpose(test_matrix)))
+        # train_matrix = np.transpose(min_max_scaler.fit_transform(np.transpose(train_matrix)))
+        # test_matrix = np.transpose(min_max_scaler.fit_transform(np.transpose(test_matrix)))
+        train_indexes = [np.where(x==-115) for x in train_matrix]
+        for i in range(len(train_matrix)):
+            train_matrix[train_indexes[i]] = min_max_scaler.fit_transform(train_matrix[train_indexes[i]])
+        test_indexes = [np.where(x==-115) for x in test_matrix]
+        for i in range(len(test_matrix)):
+            test_matrix[test_indexes[i]] = min_max_scaler.fit_transform(test_matrix[test_indexes[i]])
+        train_matrix = np.transpose(min_max_scaler.fit_transform(np.transpose(train_matrix)
+                                                                 )
+                                    )
+        test_matrix = np.transpose(min_max_scaler.fit_transform(np.transpose(test_matrix)
+                                                                )
+                                   )
         # 将wifi 信号加上每个sample的最大wifi信号， 屏蔽个体之间接收wifi信号的差异
         # train_matrix = np.tile(-train_matrix.max(axis=1, keepdims=True), (1, train_matrix.shape[1])) + train_matrix
         # test_matrix = np.tile(-test_matrix.max(axis=1, keepdims=True), (1, test_matrix.shape[1])) + test_matrix
@@ -655,5 +668,5 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False):
 if __name__ == '__main__':
     # main(offline=False)
     main_leave_one_week(offline=False,
-                        mall_ids=-1,
+                        mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"],
                         use_hyperopt=False)  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
