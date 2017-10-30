@@ -391,7 +391,7 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
 
 
 def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=1, use_default_scala = False):
-    model_name = "lightgbm_leave_one_week_wifi_matrix_rank_lonlat_matrix"
+    model_name = "lightgbm_leave_one_week_wifi_matrix_rank(use2_all2)_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -401,6 +401,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
     offline_reals = []
     all_rowid = {}
     all_predicts = {}
+    train_size= {}
     if os.path.exists("../data/best_scala/best_scala_{}.yaml".format(model_name)):
         best_scala = yaml.load(open("../data/best_scala/best_scala_{}.yaml".format(model_name), "r"))
     else:
@@ -414,7 +415,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
     for _index, mall_id in enumerate(mall_ids):
         print "train: ", mall_id, " {}/{}".format(_index, len(mall_ids))
         shops = shop_info[shop_info.mall_id == mall_id].shop_id.unique()
-        num_class = len(shops)
+
         df, train_cache, test_cache = get_wifi_cache(mall_id)
         train_matrix = train_cache[2]
         test_matrix = test_cache[2]
@@ -426,26 +427,51 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         # wifi rank info
         train = train_all[train_all.mall_id == mall_id]
         test = test_all[test_all.mall_id == mall_id]
+
+        print "shops", len(shops)
+        num_class = len(train.shop_id.unique())
+        print "train shops", num_class
+
         preprocess_basic_wifi(train)
         preprocess_basic_wifi(test)
-        sorted_wifi = get_sorted_wifi([train, test])
-        d = rank_sorted_wifi(sorted_wifi)
         other_train_wifi_features = []
         other_test_wifi_features = []
-        test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank = use_wifi_in_wifi_rank(test, train, d)
-        other_train_wifi_features.append(train_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-        other_test_wifi_features.append(test_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-        # print train_use_wifi_in_wifi_rank
-        for _top in range(10):
-            test_no_use_wifi_in_wifi_rank, train_no_use_wifi_in_wifi_rank = no_use_wifi_in_wifi_rank(test,
-                                                                                                     train,
-                                                                                                     d,
-                                                                                                     _top)
-            other_train_wifi_features.append(train_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-            other_test_wifi_features.append(test_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
 
-        other_train_wifi_feature = np.concatenate(other_train_wifi_features, axis=1)
-        other_test_wifi_feature = np.concatenate(other_test_wifi_features, axis=1)
+        sorted_wifi_all = get_sorted_wifi([train, test])
+
+        for _split in [25, 50, 75]:
+            for _index in range(len(sorted_wifi_all), 0, -1):
+                if sorted_wifi_all[_index - 1][1] >= _split:
+                    break
+            sorted_wifi = sorted_wifi_all[:_index]
+            d = rank_sorted_wifi(sorted_wifi)
+
+
+            #use
+            test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank = use_wifi_in_wifi_rank2(test, train, d)
+            other_train_wifi_features.append(train_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+            other_test_wifi_features.append(test_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+
+            # no use
+            # for _top in range(10):
+            #     test_no_use_wifi_in_wifi_rank, train_no_use_wifi_in_wifi_rank = no_use_wifi_in_wifi_rank(test,
+            #                                                                                              train,
+            #                                                                                              d,
+            #                                                                                              _top)
+            #     other_train_wifi_features.append(train_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+            #     other_test_wifi_features.append(test_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+
+            # all
+            for _top in range(10):
+                test_all_wifi_in_wifi_rank, train_all_wifi_in_wifi_rank = all_wifi_in_wifi_rank2(test,
+                                                                                                train,
+                                                                                                d,
+                                                                                                _top)
+                other_train_wifi_features.append(train_all_wifi_in_wifi_rank.values.reshape((-1, 1)))
+                other_test_wifi_features.append(test_all_wifi_in_wifi_rank.values.reshape((-1, 1)))
+
+            other_train_wifi_feature = np.concatenate(other_train_wifi_features, axis=1)
+            other_test_wifi_feature = np.concatenate(other_test_wifi_features, axis=1)
 
         test_index = test_cache[0]
         label_encoder = LabelEncoder().fit(shops)
@@ -475,7 +501,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         test_dis_matrix = np.concatenate(verctors, axis=1)
 
-        # pca_dis = PCA(n_components=int(round(num_class / 2))).fit(distance_matrix)
+        # pca_dis = PCA(n_components=int(round(num_class / 5))).fit(distance_matrix)
         # distance_matrix = pca_dis.transform(distance_matrix)
         # test_dis_matrix = pca_dis.transform(test_dis_matrix)
         train_dis_matrix = distance_matrix
@@ -496,12 +522,11 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             'feature_fraction': feature_fraction,
             'bagging_fraction': bagging_fraction,
             'bagging_freq': bagging_freq,
-            'verbose': 0,
-            'num_class': num_class
-
+            'verbose': 1,
+            'num_class': num_class,
         }
         n_round = 1000
-        early_stop_rounds = 15
+        early_stop_rounds = 20
         _train_index, _valid_index = get_last_one_week_index(train)
         argsDict = {}
         if use_hyperopt:
@@ -532,7 +557,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
                 return -acc(y_predict, _valid_y)
 
             space = {
-                "scala": hp.uniform("scala", 0.3, 8)
+                "scala": hp.choice("scala", [0.5, 0.75, 1, 2])
             }
 
             best_sln = fmin(objective, space, algo=tpe.suggest, max_evals=10)
@@ -546,8 +571,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
         scala = argsDict["scala"]
         print "use scala:", scala
-        # pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
-        pca = PCA(n_components=int(num_class * scala)).fit(np.concatenate([train_matrix,test_matrix]))
+        pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
+        # pca = PCA(n_components=int(num_class * scala)).fit(np.concatenate([train_matrix,test_matrix]))
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)
 
@@ -562,7 +587,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
         print "num_class", num_class
 
-        # kfold
         print "train", mall_id
 
         _index = 0
@@ -583,12 +607,13 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
                             early_stopping_rounds=early_stop_rounds)
 
             predict = np.argmax(bst.predict(_valid_x, num_iteration=bst.best_iteration), axis=1).astype(int)
+            print predict.shape
             predict = label_encoder.inverse_transform(predict)
             offline_predicts[_index][mall_id] = predict
             offline_reals[_index][mall_id] = label_encoder.inverse_transform(_valid_y)
             _index += 1
             best_iterations.append(bst.best_iteration)
-
+            train_size[mall_id] = _train_x.shape[0]
         if not offline:  # 线上
             best_iteration = int(np.mean(best_iterations))
             train = lgb.Dataset(train_matrix, label=y)
@@ -605,6 +630,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             _acc = acc(offline_predicts[_index][_mall_id], offline_reals[_index][_mall_id])
             accs.append(_acc)
         print _mall_id + "'s acc is", np.mean(accs)
+        print _mall_id + "'s train shape is ", train_size[_mall_id]
         result[_mall_id] = np.mean(accs)
     accs = []
     for _index in range(kfold):
@@ -653,7 +679,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 if __name__ == '__main__':
     # main(offline=False)
     main_leave_one_week(offline=True,
-                        mall_ids=["m_1375"],
+                        mall_ids=["m_8093", "m_4572", "m_6803"],
                         use_hyperopt=False,
                         default_scala=2,
                         use_default_scala=True)  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]

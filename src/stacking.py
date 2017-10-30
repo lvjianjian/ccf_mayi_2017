@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-#encoding=utf-8
+# encoding=utf-8
 
 """
 @Author: zhongjianlv
@@ -11,22 +11,224 @@
 @Update Date: 17-10-26, 22:35
 """
 
-from mlxtend.classifier import StackingClassifier
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn.ensemble import RandomForestClassifier,ExtraTreesClassifier
-from mlxtend.classifier import StackingClassifier
-from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from util import *
-import os,yaml
+import os, yaml
 import lightgbm as lgb
-from hyperopt import fmin,hp,space_eval,tpe
+from hyperopt import fmin, hp, space_eval, tpe
 from sklearn.preprocessing import LabelEncoder
-from lightgbm.sklearn import LGBMClassifier
+from sklearn.base import clone
+# from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection._split import check_cv
+
+class Stacking(object):
+    def __init__(self, base_clses, meta_cls, use_prob=False, kfold=-1, stratify=True, Kfold_shuffle=False, num_class = None):
+        """
+
+        :param base_clses: sklearn model 或者lightgbm lgb的话存入tuple("lgb", params)
+        :param meta_cls:
+        :param objective:
+        """
+        self.base_clses = base_clses
+        self.meta_cls = meta_cls
+        self.spetial_base_clses = {}
+        self.use_prob = use_prob
+        self.kfold = kfold
+        self.Kfold_shuffle = Kfold_shuffle
+        self.stratify = stratify
+        self.num_class = num_class
+        if self.kfold > 0:
+            self.cv = True
+            self.sklearn_models = {}
+            self.spetial_base_clses_params = {}
+            for _cls in base_clses:
+                if not isinstance(_cls, tuple):
+                    base_name = type(_cls).__name__.lower()
+                    for _i in range(self.kfold):
+                        self.sklearn_models[base_name + "_{}".format(_i)] = clone(_cls)
+                else:
+                    if _cls[0].startswith("lgb"):
+                        for _i in range(self.kfold):
+                            lgb_name = _cls[0] + "_" + str(_i)
+                            self.spetial_base_clses_params[lgb_name] = (lgb_name, _cls[1].copy())
+
+        else:
+            self.cv = False
+
+    def get_best_iteration(self, name):
+        it = []
+        for _name,_bst in self.spetial_base_clses.items():
+            if _name.startswith(name):
+               it.append(_bst.best_iteration)
+        return int(np.mean(it))
 
 
-def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=1, use_default_scala = False):
-    model_name = "lightgbm_leave_one_week_wifi_matrix_rank_lonlat_matrix"
+    def _lgb_train(self, _cls, train_x, train_y, valid_x=None, valid_y=None):
+        _train = lgb.Dataset(train_x, label=train_y)
+        _valid = None
+        if valid_x is not None:
+            _valid = lgb.Dataset(valid_x, label=valid_y, reference=_train)
+        if _valid is None:
+            bst = lgb.train(_cls[1],
+                            _train)
+        else:
+            bst = lgb.train(_cls[1],
+                            _train,
+                            valid_sets=_valid)
+        assert _cls[0] not in self.spetial_base_clses.keys()
+        self.spetial_base_clses[_cls[0]] = bst
+        return self._lgb_predict(_cls[0], train_x, self.use_prob)
+
+    def _lgb_predict(self, _cls_name, x, use_proba=False):
+        bst = self.spetial_base_clses[_cls_name]
+        if use_proba:
+            p = bst.predict(x, bst.best_iteration)
+        else:
+            p = np.argmax(bst.predict(x, bst.best_iteration), axis=1).astype(int).reshape((-1, 1))
+        return p
+
+    def _sklearn_predict(self, model, x, use_proba=False):
+        if use_proba:
+            p = model.predict_proba(x)
+        else:
+            p = model.predict(x).reshape((-1, 1))
+
+        if use_proba and self.num_class is not None:#针对没有出现的类别导致的feature不一样
+            sample_size = p.shape[0]
+            clss = model.classes_
+            p = dict(zip(clss,p.transpose()))
+            for _i in range(self.num_class):
+                if _i not in p.keys():
+                    p[_i] = np.zeros((sample_size,))
+            p = np.vstack(p.values()).transpose()
+        return p
+
+    def fit(self, train_x, train_y, valid_x=None, valid_y=None):
+        self.split = check_cv(self.kfold, train_y, self.stratify)
+        self.split.shuffle = self.Kfold_shuffle
+        p_rs = []
+        v_rs = []
+        if not self.cv:
+            for _cls in self.base_clses:
+                if isinstance(_cls, tuple):
+                    if _cls[0].startswith("lgb"):
+                        p = self._lgb_train(_cls, train_x, train_y, valid_x, valid_y)
+                        p_rs.append(p)
+                        if valid_x is not None:
+                            p = self._lgb_predict(_cls[0], valid_x, self.use_prob)
+                            v_rs.append(p)
+                else:
+                    _cls.fit(train_x, train_y)
+                    p = self._sklearn_predict(_cls, train_x, self.use_prob)
+                    p_rs.append(p)
+                    if valid_x is not None:
+                        p = self._sklearn_predict(_cls, valid_x, self.use_prob)
+                        v_rs.append(p)
+
+        else:
+            for _cls in self.base_clses:
+                p_part = []
+                y_index = []
+                v_part = []
+                if isinstance(_cls, tuple):  # lgb or xgb
+                    if _cls[0].startswith("lgb"):
+                        for _i, (_train_index, _test_index) in enumerate(self.split.split(train_x, train_y)):
+                            _train_x = train_x[_train_index]
+                            _train_y = train_y[_train_index]
+                            _test_x = train_x[_test_index]
+
+                            lgb_name = _cls[0] + "_" + str(_i)
+                            self._lgb_train(self.spetial_base_clses_params[lgb_name],
+                                            _train_x,
+                                            _train_y,
+                                            valid_x,
+                                            valid_y)
+                            p_part.append(self._lgb_predict(lgb_name, _test_x, self.use_prob))
+                            y_index.append(_test_index.reshape((-1, 1)))
+                            if valid_x is not None:
+                                p = self._lgb_predict(lgb_name, valid_x, self.use_prob)
+                                v_part.append(p)
+
+                else:  # sklearn
+                    for _i, (_train_index, _test_index) in enumerate(self.split.split(train_x, train_y)):
+                        _train_x = train_x[_train_index]
+                        _train_y = train_y[_train_index]
+                        _test_x = train_x[_test_index]
+                        name = type(_cls).__name__.lower()
+                        model = self.sklearn_models[name + "_" + str(_i)]
+                        model.fit(_train_x, _train_y)
+                        p = self._sklearn_predict(model, _test_x, self.use_prob)
+                        p_part.append(p)
+                        y_index.append(_test_index.reshape((-1, 1)))
+                        if valid_x is not None:
+                            p = self._sklearn_predict(model, valid_x, self.use_prob)
+                            v_part.append(p)
+                print p_part[0].shape, p_part[1].shape
+                p_part = np.vstack(p_part)
+                y_index = np.vstack(y_index)
+                p = dict(zip(list(y_index.reshape((-1,))), list(p_part)))
+                p_rs.append(np.vstack(p.values()))
+                if valid_x is not None:
+                    v_rs.append(np.mean(np.stack(v_part, axis=2), axis=2))
+
+        new_train = np.hstack(p_rs)
+
+        if valid_x is not None:
+            valid_x = np.hstack(v_rs)
+
+        assert new_train.shape[0] == train_y.shape[0]
+        if valid_x is not None:
+            assert valid_x.shape[0] == valid_y.shape[0]
+            assert new_train.shape[1] == valid_x.shape[1]
+
+        # 次学习其
+        if isinstance(self.meta_cls, tuple):
+            if self.meta_cls[0].startswith("lgb"):
+                self._lgb_train(self.meta_cls, new_train, train_y, valid_x, valid_y)
+        else:
+            self.meta_cls.fit(new_train, train_y)
+
+    def predict(self, test_x):
+        p_rs = []
+        if not self.cv:
+            for _cls in self.base_clses:
+                if isinstance(_cls, tuple):
+                    if _cls[0].startswith("lgb"):
+                        p = self._lgb_predict(_cls[0], test_x, self.use_prob)
+                        p_rs.append(p)
+                else:
+                    p = self._sklearn_predict(_cls, test_x, self.use_prob)
+                    p_rs.append(p)
+
+        else:
+            for _cls in self.base_clses:
+                p_part = []
+                if isinstance(_cls, tuple):  # lgb or xgb
+                    if _cls[0].startswith("lgb"):
+                        for _i in range(self.kfold):
+                            lgb_name = _cls[0] + "_" + str(_i)
+                            p_part.append(self._lgb_predict(lgb_name, test_x, self.use_prob))
+
+                else:  # sklearn
+                    for _i in range(self.kfold):
+                        name = type(_cls).__name__.lower()
+                        model = self.sklearn_models[name + "_" + str(_i)]
+                        p = self._sklearn_predict(model, test_x, self.use_prob)
+                        p_part.append(p)
+                p_rs.append(np.mean(np.stack(p_part, axis=2), axis=2))
+
+        new_train = np.hstack(p_rs)
+        # 次学习器
+        if isinstance(self.meta_cls, tuple):
+            if _cls[0].startswith("lgb"):
+                p = self._lgb_predict(self.meta_cls[0], new_train)
+        else:
+            p = self._sklearn_predict(self.meta_cls, new_train)
+        return p.reshape((-1,))
+
+
+def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=1, use_default_scala=False):
+    model_name = "stacking_leave_one_week_wifi_matrix_rank_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -121,6 +323,9 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         feature_fraction = 0.7
         bagging_fraction = 0.8
         bagging_freq = 5
+        n_round = 1000
+        early_stop_rounds = 15
+
         params = {
             'task': 'train',
             'boosting_type': 'gbdt',
@@ -131,12 +336,13 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             'feature_fraction': feature_fraction,
             'bagging_fraction': bagging_fraction,
             'bagging_freq': bagging_freq,
-            'verbose': 0,
-            'num_class': num_class
+            'verbose': 1,
+            'num_class': num_class,
+            'early_stopping_rounds': early_stop_rounds,
+            "num_round": n_round
 
         }
-        n_round = 1000
-        early_stop_rounds = 15
+
         _train_index, _valid_index = get_last_one_week_index(train)
         argsDict = {}
         if use_hyperopt:
@@ -181,8 +387,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
         scala = argsDict["scala"]
         print "use scala:", scala
-        # pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
-        pca = PCA(n_components=int(num_class * scala)).fit(np.concatenate([train_matrix,test_matrix]))
+        pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
+        #pca = PCA(n_components=int(num_class * scala)).fit(np.concatenate([train_matrix, test_matrix]))
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)
 
@@ -199,47 +405,63 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
         # kfold
         print "train", mall_id
-
-
+        stacking_k_fold = 3
 
         _index = 0
-        best_iterations = []
         for _train_index, _valid_index in [(_train_index, _valid_index)]:
             _train_x = train_matrix[_train_index]
             _train_y = y[_train_index]
-            _train = lgb.Dataset(_train_x, label=_train_y)
 
             _valid_x = train_matrix[_valid_index]
             _valid_y = y[_valid_index]
-            _valid = lgb.Dataset(_valid_x, label=_valid_y, reference=_train)
 
+            clf1 = RandomForestClassifier(n_estimators=1000, n_jobs=-1, verbose=1)
+            clf2 = ExtraTreesClassifier(n_estimators=1000, n_jobs=-1, verbose=1)
+            clf3 = ("lgb1", params)
 
-            clf1 = RandomForestClassifier(n_estimators=1000,n_jobs=-1,verbose=1)
-            clf2 = ExtraTreesClassifier(n_estimators=1000,n_jobs=-1,verbose=1)
-            clf3 = LGBMClassifier(params)
-            clf4 = LGBMClassifier(params)
-            sclf = StackingClassifier([clf1,clf2,clf3],clf4)
-            sclf.fit(_train_x,_train_y)
-
-
-            # bst = lgb.train(params,
-            #                 _train,
-            #                 n_round,
-            #                 valid_sets=_valid,
-            #                 early_stopping_rounds=early_stop_rounds)
+            final_params = params.copy()
+            final_params["learning_rate"] = 0.005
+            final_params["early_stopping_rounds"] = 50
+            clf4 = ("lgb2", final_params)
+            sclf = Stacking([clf1, clf2, clf3], clf4, use_prob=True, kfold=stacking_k_fold, num_class=num_class)
+            sclf.fit(_train_x,
+                     _train_y,
+                     _valid_x,
+                     _valid_y)
 
             predict = sclf.predict(_valid_x)
+            print predict
+            print _valid_y
+
             predict = label_encoder.inverse_transform(predict)
             offline_predicts[_index][mall_id] = predict
             offline_reals[_index][mall_id] = label_encoder.inverse_transform(_valid_y)
             _index += 1
-            best_iterations.append(bst.best_iteration)
+
 
         if not offline:  # 线上
-            best_iteration = int(np.mean(best_iterations))
-            train = lgb.Dataset(train_matrix, label=y)
-            bst = lgb.train(params, train, best_iteration)
-            predict = np.argmax(bst.predict(test_matrix, best_iteration), axis=1).astype(int)
+            base_iteration = sclf.get_best_iteration("lgb")
+            meta_iteration = sclf.get_best_iteration("lgb2")
+            print base_iteration
+            print meta_iteration
+            clf1 = RandomForestClassifier(n_estimators=1000, n_jobs=-1, verbose=1)
+            clf2 = ExtraTreesClassifier(n_estimators=1000, n_jobs=-1, verbose=1)
+
+            if "early_stopping_rounds" in params:
+                params.pop("early_stopping_rounds")
+            params["num_round"] = base_iteration + int(base_iteration * 0.05)
+            clf3 = ("lgb1", params)
+
+            final_params = params.copy()
+            if "early_stopping_rounds" in final_params:
+                final_params.pop("early_stopping_rounds")
+            final_params["learning_rate"] = 0.005
+            final_params["num_round"] = meta_iteration + int(meta_iteration * 0.05)
+
+            clf4 = ("lgb2", final_params)
+            sclf = Stacking([clf1, clf2, clf3], clf4, use_prob=True, kfold=stacking_k_fold, num_class=num_class)
+            sclf.fit(train_matrix, y)
+            predict = sclf.predict(test_matrix)
             predict = label_encoder.inverse_transform(predict)
             all_predicts[mall_id] = predict
             all_rowid[mall_id] = test_all[np.in1d(test_all.index, test_index)].row_id.values
@@ -260,8 +482,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         accs.append(_acc)
     print "all acc is", np.mean(accs)
 
-
-
     if len(mall_ids) < 50:
         exit(1)
 
@@ -278,7 +498,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
     if use_hyperopt:
         yaml.dump(best_scala, open("../data/best_scala/best_scala_{}.yaml".format(model_name), "w"))
-
 
     if not offline:
         all_rowid = np.concatenate(all_rowid.values())
@@ -298,18 +517,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=False,
-                        mall_ids=-1,
+    main_leave_one_week(offline=True,
+                        mall_ids=["m_6803"],
                         use_hyperopt=False,
-                        default_scala=2,
+                        default_scala=1,
                         use_default_scala=True)  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
-
-
-clf1 = KNeighborsClassifier(n_neighbors=1)
-clf2 = RandomForestClassifier(random_state=1)
-clf3 = GaussianNB()
-lr = LogisticRegression()
-
-sclf = StackingClassifier(classifiers=[clf1, clf2, clf3],
-                          meta_classifier=lr)
-

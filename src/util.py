@@ -347,6 +347,67 @@ def use_wifi_in_wifi_rank(_part_test, _part_train, d):
     return test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank
 
 
+def all_wifi_in_wifi_rank(_part_test, _part_train, d, _top):
+    # 未使用的wifi在wifi_rank中的排名, top为信号排名中的第top个,取值0-9
+    def all_use_wifi_rank(x, d, top):
+        size = len(d)
+        all_wifi =[]
+        for _w in x[1]:
+            all_wifi.append(_w)
+        for _w in x[2]:
+            all_wifi.append(_w)
+        all_wifi = sorted(all_wifi, key=lambda x: -x[1])
+        if len(all_wifi) > top:
+            if all_wifi[top][0] in d:
+                return d[all_wifi[top][0]]
+            else:
+                return size
+        else:
+            return size
+
+    train_all_wifi_in_wifi_rank = _part_train.basic_wifi_info.map(lambda x: all_use_wifi_rank(x, d, _top))
+    test_all_wifi_in_wifi_rank = _part_test.basic_wifi_info.map(lambda x: all_use_wifi_rank(x, d, _top))
+    return test_all_wifi_in_wifi_rank, train_all_wifi_in_wifi_rank
+
+
+def all_wifi_in_wifi_rank2(_part_test, _part_train, d, _top):
+    # wifi在wifi_rank中的排名, top为信号排名中的第top个,取值0-9,若在d中找不到则往后找
+    def all_use_wifi_rank2(x, d, top):
+        size = len(d)
+        all_wifi =[]
+        for _w in x[1]:
+            all_wifi.append(_w)
+        for _w in x[2]:
+            all_wifi.append(_w)
+        all_wifi = sorted(all_wifi, key=lambda x: -x[1])
+        _f = -1
+        for _wn, _sig in all_wifi:
+            if _wn in d:
+                _f += 1
+            if _f == top:
+                return d[_wn]
+        return size
+
+    train_all_wifi_in_wifi_rank = _part_train.basic_wifi_info.map(lambda x: all_use_wifi_rank2(x, d, _top))
+    test_all_wifi_in_wifi_rank = _part_test.basic_wifi_info.map(lambda x: all_use_wifi_rank2(x, d, _top))
+    return test_all_wifi_in_wifi_rank, train_all_wifi_in_wifi_rank
+
+def use_wifi_in_wifi_rank2(_part_test, _part_train, d):
+    # wifi在wifi_rank中的排名, top为信号排名中的第top个,取值0-9,若在d中找不到则往后找
+    def use_wifi_rank2(x, d):
+        size = len(d)
+        all_wifi = x[1]
+        all_wifi = sorted(all_wifi, key=lambda x: -x[1])
+        for _wn, _sig in all_wifi:
+            if _wn in d:
+                return d[_wn]
+        return size
+
+    train_all_wifi_in_wifi_rank = _part_train.basic_wifi_info.map(lambda x: use_wifi_rank2(x, d))
+    test_all_wifi_in_wifi_rank = _part_test.basic_wifi_info.map(lambda x: use_wifi_rank2(x, d))
+    return test_all_wifi_in_wifi_rank, train_all_wifi_in_wifi_rank
+
+
 def rank_one(train, name):
     x1 = train.groupby(name).count()["user_id"]
     x1 = zip(list(x1.index.values), list(x1.values))
