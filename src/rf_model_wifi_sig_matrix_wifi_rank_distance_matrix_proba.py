@@ -47,8 +47,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         df, train_cache, test_cache = get_wifi_cache2(mall_id)
         train_matrix = train_cache[2]
         test_matrix = test_cache[2]
-        train_matrix_origin_all = train_matrix.copy()
-        test_matrix_origin_all = test_matrix.copy()
+
         choose_strong_wifi_index_set = set()
 
         for _sig_max, _sig_num in zip([-90], [6]):
@@ -163,7 +162,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         # _p_test_pcas = lonlat_pca.transform(test_lonlats)
 
 
-        n_estimetors = 500
+        n_estimetors = 1000
         max_features = "auto"
         _train_index, _valid_index = get_last_one_week_index(train)
         argsDict = {}
@@ -219,8 +218,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
                                        train_strong_matrix,
                                        other_train_wifi_feature,
                                        train_time_features,
-                                       train_lonlats
-                                       ],
+                                       train_lonlats],
                                       axis=1)
         test_matrix = np.concatenate([test_matrix,
                                       test_dis_matrix,
@@ -230,8 +228,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
                                       test_lonlats],
                                      axis=1)
 
-        train_matrix = train_matrix_origin_all
-        test_matrix = test_matrix_origin_all
         print "num_class", num_class
 
         print "train", mall_id
@@ -255,6 +251,27 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             _index += 1
             print mall_id + "'s acc is", acc(predict, _real_y)
 
+            def get_max_index(predict_proba, k=1):
+                r = []
+                for _ in range(k):
+                    index = np.argmax(predict_proba, axis=1)
+                    r.append(index)
+                    index = zip(range(predict_proba.shape[0]), list(index))
+                    for _i1, _i2 in index:
+                        predict_proba[_i1, _i2] = 0
+                if k == 1:
+                    return r
+                else:
+                    return r
+
+            predict_proba = rf.predict_proba(_valid_x)
+            predict_list = get_max_index(predict_proba, k=10)
+            predict_list = [rf.classes_[predict] for predict in predict_list]
+            predict_list = [label_encoder.inverse_transform(predict) for predict in predict_list]
+
+            print mall_id + "'s acc is", topk_acc(predict_list, _real_y)
+
+            exit(1)
         if not offline:  # 线上
             rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, max_features=max_features)
             rf.fit(train_matrix, y)
@@ -274,9 +291,10 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
         if save_offline_predict:
             pd.DataFrame({"predict": offline_predicts[_index][_mall_id],
-                          "real": offline_reals[_index][_mall_id]}).to_csv("../result/offline_predict/{}_{}.csv".format(_mall_id,
-                                                                                                                        _index),
-                                                                           index=None)
+                          "real": offline_reals[_index][_mall_id]}).to_csv(
+                    "../result/offline_predict/{}_{}.csv".format(_mall_id,
+                                                                 _index),
+                    index=None)
     accs = []
     for _index in range(kfold):
         all_predict = np.concatenate(offline_reals[_index].values())
@@ -315,8 +333,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=False,
-                        mall_ids=-1,
+    main_leave_one_week(offline=True,
+                        mall_ids=["m_7168"],
                         # "m_8093", "m_4572", "m_6803"
                         use_hyperopt=False,
                         default_scala=2,

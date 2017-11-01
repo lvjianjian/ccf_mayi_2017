@@ -18,6 +18,7 @@ from sklearn.cluster import MiniBatchKMeans
 from sklearn.decomposition import PCA
 import scipy.sparse as sp
 import scipy
+import os, yaml
 
 # from tsne import tsne
 shop_info = None
@@ -153,7 +154,8 @@ def preprocess_lonlat(train, test):
         test.loc[_part_test[~np.in1d(_part_test.index, reasonable_part_test.index)].index, "lon_lat_in_shop"] = 0
 
         # 对经纬度进行PCA变换
-        pca = PCA().fit(np.concatenate([_part_train[["longitude", "latitude"]].values, _part_test[["longitude", "latitude"]]]))
+        pca = PCA().fit(
+            np.concatenate([_part_train[["longitude", "latitude"]].values, _part_test[["longitude", "latitude"]]]))
         _p_train_pcas = pca.transform(_part_train[["longitude", "latitude"]].values)
         _p_test_pcas = pca.transform(_part_test[["longitude", "latitude"]].values)
         train.loc[_part_train.index, "pca_lon"] = _p_train_pcas[:, 0]
@@ -177,6 +179,30 @@ def get_all_wifi(x, all_wifis):
         all_wifis.append(_x[0])
 
 
+def get_all_wifi_just_train(x, all_wifis, train_wifis):
+    if train_wifis is None:
+        for _x in x[1]:
+            all_wifis.append(_x[0])
+        for _x in x[2]:
+            all_wifis.append(_x[0])
+    else:
+        assert isinstance(train_wifis, set)
+        for _x in x[1]:
+            if (_x[0] in train_wifis):
+                all_wifis.append(_x[0])
+        for _x in x[2]:
+            if (_x[0] in train_wifis):
+                all_wifis.append(_x[0])
+
+
+def rank_sorted_wifi(sorted_wifi):
+    assert isinstance(sorted_wifi, list)
+    d = {}  # 将wifi按rank放入dict, 排名从0开始
+    for i, w in enumerate(sorted_wifi):
+        d[w[0]] = i
+    return d
+
+
 def get_sorted_wifi(datas):
     all_wifis = []
     for _data in datas:
@@ -186,12 +212,15 @@ def get_sorted_wifi(datas):
     return sorted_wifi
 
 
-def rank_sorted_wifi(sorted_wifi):
-    assert isinstance(sorted_wifi, list)
-    d = {}  # 将wifi按rank放入dict, 排名从0开始
-    for i, w in enumerate(sorted_wifi):
-        d[w[0]] = i
-    return d
+def get_sorted_wifi_just_train(train, test):
+    all_wifis = []
+    train.basic_wifi_info.map(lambda x: get_all_wifi_just_train(x, all_wifis, None))
+    train_wifis = set(all_wifis)
+    # test中只统计在train中出现的wifi
+    test.basic_wifi_info.map(lambda x: get_all_wifi_just_train(x, all_wifis, train_wifis))
+    c = Counter(all_wifis)
+    sorted_wifi = sorted(c.items(), key=lambda x: -x[1])
+    return sorted_wifi
 
 
 def wifi_signal_in_top(x, wifi_name):
@@ -350,7 +379,7 @@ def all_wifi_in_wifi_rank(_part_test, _part_train, d, _top):
     # 未使用的wifi在wifi_rank中的排名, top为信号排名中的第top个,取值0-9
     def all_use_wifi_rank(x, d, top):
         size = len(d)
-        all_wifi =[]
+        all_wifi = []
         for _w in x[1]:
             all_wifi.append(_w)
         for _w in x[2]:
@@ -373,7 +402,7 @@ def all_wifi_in_wifi_rank2(_part_test, _part_train, d, _top):
     # wifi在wifi_rank中的排名, top为信号排名中的第top个,取值0-9,若在d中找不到则往后找
     def all_use_wifi_rank2(x, d, top):
         size = len(d)
-        all_wifi =[]
+        all_wifi = []
         for _w in x[1]:
             all_wifi.append(_w)
         for _w in x[2]:
@@ -391,6 +420,7 @@ def all_wifi_in_wifi_rank2(_part_test, _part_train, d, _top):
     test_all_wifi_in_wifi_rank = _part_test.basic_wifi_info.map(lambda x: all_use_wifi_rank2(x, d, _top))
     return test_all_wifi_in_wifi_rank, train_all_wifi_in_wifi_rank
 
+
 def use_wifi_in_wifi_rank2(_part_test, _part_train, d):
     # wifi在wifi_rank中的排名, top为信号排名中的第top个,取值0-9,若在d中找不到则往后找
     def use_wifi_rank2(x, d):
@@ -406,6 +436,14 @@ def use_wifi_in_wifi_rank2(_part_test, _part_train, d):
     test_all_wifi_in_wifi_rank = _part_test.basic_wifi_info.map(lambda x: use_wifi_rank2(x, d))
     return test_all_wifi_in_wifi_rank, train_all_wifi_in_wifi_rank
 
+def check_wifi_rank(train_wifi_rank, test_wifi_rank):
+    choose = []
+    for _i in range(train_wifi_rank.shape[1]):
+        if np.unique(train_wifi_rank[:, _i]).shape[0] != 1:
+            choose.append(_i)
+    train_wifi_rank = train_wifi_rank[:, choose]
+    test_wifi_rank = test_wifi_rank[:, choose]
+    return train_wifi_rank, test_wifi_rank
 
 def rank_one(train, name):
     x1 = train.groupby(name).count()["user_id"]
@@ -538,11 +576,14 @@ def basic_wifi_map2matrix(x, wifi_matrix, wifi_rank_dict, use_wifis_str):
     index = x[1]
     basic_wifi = x[0]
     use_str = ""
+    all_train_wifis = wifi_rank_dict.keys()
     for x_use in basic_wifi[1]:
-        wifi_matrix[index, wifi_rank_dict[x_use[0]]] = x_use[1]
-        use_str += (str(wifi_rank_dict[x_use[0]]) + "|")
+        if x_use[0] in all_train_wifis:
+            wifi_matrix[index, wifi_rank_dict[x_use[0]]] = x_use[1]
+            use_str += (str(wifi_rank_dict[x_use[0]]) + "|")
     for x_no_use in basic_wifi[2]:
-        wifi_matrix[index, wifi_rank_dict[x_no_use[0]]] = x_no_use[1]
+        if x_no_use[0] in all_train_wifis:
+            wifi_matrix[index, wifi_rank_dict[x_no_use[0]]] = x_no_use[1]
     if use_str != "":
         use_str = use_str[:-1]
     use_wifis_str.append(use_str)
@@ -583,6 +624,47 @@ def wifi_info2csv(datas, names):
             # !!!有wifi同名情况
 
 
+def wifi_info2csv_just_train(train, test):
+    if not os.path.exists("../data/wifi_info_cache2"):
+        os.mkdir("../data/wifi_info_cache2")
+
+    shop_info = load_shop_info()
+    mall_ids = shop_info.mall_id.unique()
+    for _data in [train, test]:
+        if "basic_wifi_info" not in _data.columns:
+            preprocess_basic_wifi(_data)
+    for _mall_id in mall_ids:
+        print _mall_id
+        train_mall = train[train.mall_id == _mall_id]
+        test_mall = test[test.mall_id == _mall_id]
+        sorted_wifi = get_sorted_wifi_just_train(train_mall, test_mall)
+        df = pd.DataFrame({"wifi_name": [wifi[0] for wifi in sorted_wifi],
+                           "wifi_num": [wifi[1] for wifi in sorted_wifi]})
+        df.index.name = "wifi_rank"
+        df.to_csv("../data/wifi_info_cache2/{}_rank.csv".format(_mall_id))
+        d = rank_sorted_wifi(sorted_wifi)
+        for _part_data, name in zip([train_mall, test_mall], ["train", "test"]):
+            wifi_matrix = np.zeros((_part_data.shape[0], len(sorted_wifi)))
+            # wifi_matrix[:] = -115
+            use_wifi_str = []
+            _part_data.loc[:, "i_index"] = range(_part_data.shape[0])
+            _part_data[["basic_wifi_info", "i_index"]].apply(lambda x:
+                                                             basic_wifi_map2matrix(x,
+                                                                                   wifi_matrix,
+                                                                                   d,
+                                                                                   use_wifi_str),
+                                                             axis=1)
+            a = np.asarray(use_wifi_str)
+            # 用csv 存读取很慢, 将index, usewifi 和matrix 分开存
+            np.save("../data/wifi_info_cache2/{}_{}_index".format(name, _mall_id), _part_data.index)
+            np.save("../data/wifi_info_cache2/{}_{}_use_wifi".format(name, _mall_id), a)
+            # 用稀疏矩阵存取
+            x = sp.csc_matrix(wifi_matrix)
+            scipy.save("../data/wifi_info_cache2/{}_{}_matrix".format(name, _mall_id), x)
+
+            # !!!有wifi同名情况
+
+
 def get_wifi_cache(mall_id, default=-115):
     df = pd.read_csv("../data/wifi_info_cache/{}_rank.csv".format(mall_id))
     train_index = scipy.load("../data/wifi_info_cache/{}_{}_index.npy".format("train", mall_id))
@@ -595,9 +677,24 @@ def get_wifi_cache(mall_id, default=-115):
     test_matrix[test_matrix[:] == 0] = default
     return df, (train_index, train_use_wifi, train_matrix), (test_index, test_use_wifi, test_matrix)
 
+def get_wifi_cache2(mall_id, default=-115): # 统计时候只统计在train中出现的
+    df = pd.read_csv("../data/wifi_info_cache2/{}_rank.csv".format(mall_id))
+    train_index = scipy.load("../data/wifi_info_cache2/{}_{}_index.npy".format("train", mall_id))
+    test_index = scipy.load("../data/wifi_info_cache2/{}_{}_index.npy".format("test", mall_id))
+    train_use_wifi = scipy.load("../data/wifi_info_cache2/{}_{}_use_wifi.npy".format("train", mall_id))
+    test_use_wifi = scipy.load("../data/wifi_info_cache2/{}_{}_use_wifi.npy".format("test", mall_id))
+    train_matrix = scipy.load("../data/wifi_info_cache2/{}_{}_matrix.npy".format("train", mall_id))[()].toarray()
+    test_matrix = scipy.load("../data/wifi_info_cache2/{}_{}_matrix.npy".format("test", mall_id))[()].toarray()
+    train_matrix[train_matrix[:] == 0] = default
+    test_matrix[test_matrix[:] == 0] = default
+    return df, (train_index, train_use_wifi, train_matrix), (test_index, test_use_wifi, test_matrix)
 
 def do_wifi_cache():
     wifi_info2csv([load_train(), load_testA()], ["train", "test"])
+
+
+def do_wifi_cache_just_train():
+    wifi_info2csv_just_train(load_train(), load_testA())
 
 
 def wifi_sig_feature_names(mall_id):
@@ -649,7 +746,13 @@ def get_last_one_week_index(train):
     train_index = train[dt <= 24]["i_loc"].values
     return train_index, valid_index
 
+def topk_acc(predict_list, real):
+    x = np.zeros(real.shape[0])
+    for predict in predict_list:
+        x[predict == real] = 1
+    return (x == 1).sum() / float(x.shape[0])
+
 
 if __name__ == '__main__':
     # save_result(None, "../result/test", ["a", "b"])
-    do_wifi_cache()
+    do_wifi_cache_just_train()

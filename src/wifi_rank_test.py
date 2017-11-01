@@ -43,21 +43,28 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         print "train: ", mall_id, " {}/{}".format(_index, len(mall_ids))
         shops = shop_info[shop_info.mall_id == mall_id].shop_id.unique()
         num_class = len(shops)
-        df, train_cache, test_cache = get_wifi_cache(mall_id)
+        df, train_cache, test_cache = get_wifi_cache2(mall_id)
         train_matrix = train_cache[2]
         test_matrix = test_cache[2]
+        train_matrix_origin = train_matrix.copy()
+        test_matrix_origin = test_matrix.copy()
+        choose_strong_wifi_index_set = set()
 
+        for _sig_max, _sig_num in zip([-90], [6]):
+            strong_sig_index = zip(range(train_matrix.shape[0]),
+                                   list((train_matrix > _sig_max).sum(axis=0)))
+            strong_sig_index = sorted(strong_sig_index, key=lambda x: -x[1])
+            strong_sig_worst = _sig_num
+            for _index in range(len(strong_sig_index)):
+                if strong_sig_index[_index][1] < strong_sig_worst:
+                    break
+            strong_sig_choose = _index - 1
+            choose_strong_wifi_index = [_wi[0] for _wi in strong_sig_index[:strong_sig_choose]]
 
-        strong_sig_index = zip(range(train_matrix.shape[0]),
-                               list((train_matrix > -70).sum(axis=0)))
-        strong_sig_index = sorted(strong_sig_index, key=lambda x: -x[1])
-        strong_sig_worst = 5
-        for _index in range(len(strong_sig_index)):
-            if strong_sig_index[_index][1] < strong_sig_worst:
-                break
-        strong_sig_choose = _index - 1
-        choose_strong_wifi_index = [_wi[0] for _wi in strong_sig_index[:strong_sig_choose]]
+            choose_strong_wifi_index_set = choose_strong_wifi_index_set.union(set(choose_strong_wifi_index))
+            print len(choose_strong_wifi_index_set)
         # print choose_strong_wifi_index
+        choose_strong_wifi_index = list(choose_strong_wifi_index_set)
         train_strong_matrix = train_matrix[:, choose_strong_wifi_index]
         test_strong_matrix = test_matrix[:, choose_strong_wifi_index]
 
@@ -70,54 +77,63 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         test = test_all[test_all.mall_id == mall_id]
         preprocess_basic_wifi(train)
         preprocess_basic_wifi(test)
-        sorted_wifi = get_sorted_wifi([train, test])
-        _split = 1
-        for _index in range(len(sorted_wifi), 0, -1):
-            if sorted_wifi[_index - 1][1] >= _split:
-                break
-        sorted_wifi = sorted_wifi[:_index]
-
-        train_matrix = train_matrix[:, :_index]
-        test_matrix = test_matrix[:, :_index]
-
-        d = rank_sorted_wifi(sorted_wifi)
         other_train_wifi_features = []
         other_test_wifi_features = []
+        sorted_wifi_all = get_sorted_wifi_just_train(train, test)
 
-
-        # use
-        test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank = use_wifi_in_wifi_rank2(test, train, d)
-        other_train_wifi_features.append(train_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-        other_test_wifi_features.append(test_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-
-        # no use
-        # for _top in range(10):
-        #     test_no_use_wifi_in_wifi_rank, train_no_use_wifi_in_wifi_rank = no_use_wifi_in_wifi_rank(test,
-        #                                                                                              train,
-        #                                                                                              d,
-        #                                                                                              _top)
-        #     other_train_wifi_features.append(train_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-        #     other_test_wifi_features.append(test_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
-
-
-        # all
         take = 10
-        for _top in range(take):
-            test_all_wifi_in_wifi_rank, train_all_wifi_in_wifi_rank = all_wifi_in_wifi_rank2(test,
-                                                                                            train,
-                                                                                            d,
-                                                                                            _top)
-            other_train_wifi_features.append(train_all_wifi_in_wifi_rank.values.reshape((-1, 1)))
-            other_test_wifi_features.append(test_all_wifi_in_wifi_rank.values.reshape((-1, 1)))
+        for _split in [5, 10, 15, 20, 30, 50, 75, 100, 150, 250, 500, 750, 1000]:
+            for _index in range(len(sorted_wifi_all), 0, -1):
+                if sorted_wifi_all[_index - 1][1] >= _split:
+                    break
+            sorted_wifi = sorted_wifi_all[:_index]
+            d = rank_sorted_wifi(sorted_wifi)
+
+            # use
+            test_use_wifi_in_wifi_rank, train_use_wifi_in_wifi_rank = use_wifi_in_wifi_rank2(test, train, d)
+            other_train_wifi_features.append(train_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+            other_test_wifi_features.append(test_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+
+            # no use
+            # for _top in range(10):
+            #     test_no_use_wifi_in_wifi_rank, train_no_use_wifi_in_wifi_rank = no_use_wifi_in_wifi_rank(test,
+            #                                                                                              train,
+            #                                                                                              d,
+            #                                                                                              _top)
+            #     other_train_wifi_features.append(train_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+            #     other_test_wifi_features.append(test_no_use_wifi_in_wifi_rank.values.reshape((-1, 1)))
+
+            # all
+            for _top in range(take):
+                test_all_wifi_in_wifi_rank, train_all_wifi_in_wifi_rank = all_wifi_in_wifi_rank2(test,
+                                                                                                 train,
+                                                                                                 d,
+                                                                                                 _top)
+                other_train_wifi_features.append(train_all_wifi_in_wifi_rank.values.reshape((-1, 1)))
+                other_test_wifi_features.append(test_all_wifi_in_wifi_rank.values.reshape((-1, 1)))
 
         other_train_wifi_feature = np.concatenate(other_train_wifi_features, axis=1)
         other_test_wifi_feature = np.concatenate(other_test_wifi_features, axis=1)
+
+
+        other_train_wifi_feature, other_test_wifi_feature = check_wifi_rank(other_train_wifi_feature,
+                                                                            other_test_wifi_feature)
+        preprocess_basic_time(train)
+        preprocess_basic_time(test)
+        train_wh_features = train[["weekday", "hour"]].values
+        test_wh_features = test[["weekday", "hour"]].values
+
+        train_w_features = train[["weekday"]].values
+        test_w_features = test[["weekday"]].values
+
+        train_h_features = train[["hour"]].values
+        test_h_features = test[["hour"]].values
 
         test_index = test_cache[0]
         label_encoder = LabelEncoder().fit(shops)
         y = label_encoder.transform(train.shop_id)
 
-        n_estimetors = 1000
+        n_estimetors = 500
         scala = 2
 
         print "use scala:", scala
@@ -159,8 +175,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         _p_train_pcas = lonlat_pca.transform(train_lonlats)
         _p_test_pcas = lonlat_pca.transform(test_lonlats)
 
-        train_matrix = train_strong_matrix
-        test_matrix = test_strong_matrix
+        # train_matrix = other_train_wifi_feature
+        # test_matrix = other_test_wifi_feature
 
         # train_matrix = np.concatenate([train_matrix,
         #                                train_dis_matrix,
@@ -173,6 +189,14 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
         _train_index, _valid_index = get_last_one_week_index(train)
 
+
+        train_matrix2 = np.concatenate([train_strong_matrix,
+                                       train_lonlats,
+                                        # other_train_wifi_feature
+                                        # train_w_features,
+                                        # train_wh_features,
+                                        ], axis=1)
+
         print "num_class", num_class
 
         # kfold
@@ -180,20 +204,109 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
         _index = 0
         for _train_index, _valid_index in [(_train_index, _valid_index)]:
-            _train_x = train_matrix[_train_index]
+            _train_x = train_matrix2[_train_index]
             _train_y = y[_train_index]
 
-            _valid_x = train_matrix[_valid_index]
+            _valid_x = train_matrix2[_valid_index]
+            _valid_y = y[_valid_index]
+
+
+            rf = RandomForestClassifier(n_estimators=1000, n_jobs=-1)
+            rf.fit(_train_x, _train_y)
+            predict = rf.predict(_valid_x)
+            print mall_id + "'s top 1 acc is", acc(predict, _valid_y)
+
+
+
+            exit(1)
+            predict = rf.predict(_valid_x)
+            print mall_id + "'s top 1 acc is", acc(predict,_valid_y)
+            predict = label_encoder.inverse_transform(predict)
+            offline_predicts[_index][mall_id] = predict
+            offline_reals[_index][mall_id] = label_encoder.inverse_transform(_valid_y)
+            _index += 1
+            topk = 5
+            topk2 = 10
+            def get_max_index(predict_proba, k=1):
+                predict_proba = predict_proba.copy()
+                r = []
+                for _ in range(k):
+                    index = np.argmax(predict_proba, axis=1)
+                    r.append(index)
+                    index = zip(range(predict_proba.shape[0]), list(index))
+                    for _i1, _i2 in index:
+                        predict_proba[_i1, _i2] = 0
+                if k == 1:
+                    return r
+                else:
+                    return r
+
+            def get_label_and_proba(predict_proba,_clss):
+                maj = np.apply_along_axis(lambda x: [_clss.take(np.argmax(x)),x[np.argmax(x)]],
+                                          axis=1,
+                                          arr=predict_proba)
+
+                return maj
+
+            predict_proba = rf.predict_proba(_train_x)
+            labels_probas = get_label_and_proba(predict_proba, rf.classes_)
+            predict = labels_probas[:, 0]
+            probas = labels_probas[:, 1]
+
+            threshold = 0.4
+            print "all", predict.shape[0]
+            print "< {}".format(threshold), (probas < threshold).sum()
+            print acc(predict[probas < threshold], _train_y[probas < threshold])
+
+            exit(1)
+            predict_list = get_max_index(predict_proba, k=topk)
+            predict_list = [rf.classes_[predict] for predict in predict_list]
+            print mall_id + "'s top {} acc is".format(topk), topk_acc(predict_list, _valid_y)
+
+            predict_list = get_max_index(predict_proba, k=topk2)
+            predict_list = [rf.classes_[predict] for predict in predict_list]
+
+
+
+            print mall_id + "'s top {} acc is".format(topk2), topk_acc(predict_list, _valid_y)
+
+            exit(1)
+
+            # 第二次
+            _train_x = train_matrix2[_train_index]
+            _train_y = y[_train_index]
+
+            _valid_x = train_matrix2[_valid_index]
             _valid_y = y[_valid_index]
 
             rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
             rf.fit(_train_x, _train_y)
 
-            predict = rf.predict(_valid_x)
-            predict = label_encoder.inverse_transform(predict)
-            offline_predicts[_index][mall_id] = predict
-            offline_reals[_index][mall_id] = label_encoder.inverse_transform(_valid_y)
-            _index += 1
+            predict_proba = rf.predict_proba(_valid_x)
+
+            def get_label(predict_proba, predict_list,clss):
+                # index2cls = zip(range(len(clss)), clss)
+                cls2index = dict(zip(clss, range(len(clss))))
+                r = []
+                for i in range(predict_proba.shape[0]):
+                    print i
+                    p = predict_proba[i, :]
+                    _label = -1
+                    _proba = 0
+                    for j in range(len(predict_list)):
+                        _l = predict_list[j][i]
+                        print _l, p[cls2index[_l]]
+                        if p[cls2index[_l]] > _proba:
+                            _proba = p[cls2index[_l]]
+                            _label = _l
+                    r.append(_label)
+                return np.asarray(r)
+
+            predict = get_label(predict_proba, predict_list,rf.classes_)
+
+            print mall_id + "'s top 1 acc is", acc(predict, _valid_y)
+
+
 
         if not offline:  # 线上
             rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
@@ -248,5 +361,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 if __name__ == '__main__':
     # main(offline=False)
     main_leave_one_week(offline=True,
-                        mall_ids=["m_8093", "m_4572", "m_6803"],
-                        use_hyperopt=False)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+                        mall_ids=["m_6803"],
+                        use_hyperopt=False,
+                        default_scala=1)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]

@@ -19,6 +19,8 @@ import lightgbm as lgb
 from hyperopt import hp, fmin, tpe, rand, space_eval
 import yaml
 import os
+
+
 def main(offline):
     model_name = "lightgbm_wifi_sig_matrix_rank_lonlat_matrix"
     train_all = load_train()
@@ -125,7 +127,7 @@ def main(offline):
             'task': 'train',
             'boosting_type': 'gbdt',
             'objective': 'multiclass',
-            'metric': [ 'multi_error'],
+            'metric': ['multi_error'],
             'num_leaves': num_leaves,
             'learning_rate': learning_rate,
             'feature_fraction': feature_fraction,
@@ -294,7 +296,7 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
             'task': 'train',
             'boosting_type': 'gbdt',
             'objective': 'multiclass',
-            'metric': [ 'multi_error'],
+            'metric': ['multi_error'],
             'num_leaves': num_leaves,
             'learning_rate': learning_rate,
             'feature_fraction': feature_fraction,
@@ -390,7 +392,7 @@ def main_kfold(offline, kfold=5, mall_ids=-1):
         save_result(result, path, None)
 
 
-def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=1, use_default_scala = False):
+def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=1, use_default_scala=False):
     model_name = "lightgbm_leave_one_week_wifi_matrix_strong_wifi_matrix_rank2_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
@@ -401,7 +403,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
     offline_reals = []
     all_rowid = {}
     all_predicts = {}
-    train_size={}
+    train_size = {}
     if os.path.exists("../data/best_scala/best_scala_{}.yaml".format(model_name)):
         best_scala = yaml.load(open("../data/best_scala/best_scala_{}.yaml".format(model_name), "r"))
     else:
@@ -417,7 +419,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         df, train_cache, test_cache = get_wifi_cache(mall_id)
         train_matrix = train_cache[2]
         test_matrix = test_cache[2]
-
 
         choose_strong_wifi_index_set = set()
 
@@ -526,7 +527,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         train_dis_matrix = distance_matrix
 
         # 模型参数
-        num_leaves = 35
+        num_leaves = 50
         learning_rate = 0.04
         feature_fraction = 0.7
         bagging_fraction = 0.8
@@ -543,9 +544,11 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             'bagging_freq': bagging_freq,
             'verbose': 1,
             'num_class': num_class,
+            'min_data_in_leaf': 1,
+            'min_sum_hessian_in_leaf': 1e-5
         }
         n_round = 1000
-        early_stop_rounds = 20
+        early_stop_rounds = 25
         _train_index, _valid_index = get_last_one_week_index(train)
         argsDict = {}
         if use_hyperopt:
@@ -611,7 +614,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
                                       other_test_wifi_feature],
                                      axis=1)
 
-
         print "num_class", num_class
 
         print "train", mall_id
@@ -667,8 +669,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         accs.append(_acc)
     print "all acc is", np.mean(accs)
 
-
-
     if len(mall_ids) < 50:
         exit(1)
 
@@ -685,7 +685,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
     if use_hyperopt:
         yaml.dump(best_scala, open("../data/best_scala/best_scala_{}.yaml".format(model_name), "w"))
-
 
     if not offline:
         all_rowid = np.concatenate(all_rowid.values())
@@ -705,8 +704,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=True,
-                        mall_ids=["m_8093", "m_4572", "m_6803"],
+    main_leave_one_week(offline=False,
+                        mall_ids=-1, #["m_8093", "m_4572", "m_6803"]
                         use_hyperopt=False,
                         default_scala=2,
                         use_default_scala=True)  # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]

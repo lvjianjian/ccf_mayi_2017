@@ -13,16 +13,14 @@
 
 from util import *
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split, KFold
 from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from hyperopt import hp, fmin, tpe, rand, space_eval
 import os, yaml
-from sklearn.svm import SVC
-
+from stacking import Stacking
 
 def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=2, save_offline_predict=False):
-    model_name = "rf_leave_one_week_wifi_matrix_strong_wifi_matrix_rank2_lonlat_matrix"
+    model_name = "stacking_leave_one_week_wifi_matrix_strong_wifi_matrix_rank2_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -47,8 +45,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         df, train_cache, test_cache = get_wifi_cache2(mall_id)
         train_matrix = train_cache[2]
         test_matrix = test_cache[2]
-        train_matrix_origin_all = train_matrix.copy()
-        test_matrix_origin_all = test_matrix.copy()
+
+
         choose_strong_wifi_index_set = set()
 
         for _sig_max, _sig_num in zip([-90], [6]):
@@ -163,7 +161,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         # _p_test_pcas = lonlat_pca.transform(test_lonlats)
 
 
-        n_estimetors = 500
+        n_estimetors = 1000
         max_features = "auto"
         _train_index, _valid_index = get_last_one_week_index(train)
         argsDict = {}
@@ -184,10 +182,17 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
                 _valid_x = _train_matrix[_valid_index]
                 _valid_y = y[_valid_index]
 
-                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, max_features=max_features)
-                rf.fit(_train_x, _train_y)
-                y_predict = rf.predict(_valid_x)
-                return -acc(y_predict, _valid_y)
+                clf1 = ("rf1", RandomForestClassifier(n_estimators=1000, n_jobs=-1, verbose=1))
+                clf2 = ("et1", ExtraTreesClassifier(n_estimators=1000, n_jobs=-1, verbose=1))
+                clf4 = ("rf_final", RandomForestClassifier(n_estimators=1000))
+                sclf = Stacking([clf1, clf2], clf4, use_prob=True, kfold=5, num_class=num_class)
+                sclf.fit(_train_x,
+                         _train_y,
+                         _valid_x,
+                         _valid_y)
+
+                predict = sclf.predict(_valid_x)
+                return -acc(predict, _valid_y)
 
             space = {
                 "scala": hp.uniform("scala", 0.3, 8)
@@ -230,8 +235,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
                                       test_lonlats],
                                      axis=1)
 
-        train_matrix = train_matrix_origin_all
-        test_matrix = test_matrix_origin_all
         print "num_class", num_class
 
         print "train", mall_id
@@ -244,10 +247,16 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             _valid_x = train_matrix[_valid_index]
             _valid_y = y[_valid_index]
 
-            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, max_features=max_features)
-            rf.fit(_train_x, _train_y)
+            clf1 = ("rf1", RandomForestClassifier(n_estimators=1000, n_jobs=-1, verbose=1))
+            clf2 = ("et1", ExtraTreesClassifier(n_estimators=1000, n_jobs=-1, verbose=1))
+            clf4 = ("rf_final", RandomForestClassifier(n_estimators=1000, n_jobs=-1))
+            sclf = Stacking([clf1, clf2], clf4, use_prob=True, kfold=5, num_class=num_class)
+            sclf.fit(_train_x,
+                     _train_y,
+                     _valid_x,
+                     _valid_y)
 
-            predict = rf.predict(_valid_x)
+            predict = sclf.predict(_valid_x)
             predict = label_encoder.inverse_transform(predict)
             offline_predicts[_index][mall_id] = predict
             _real_y = label_encoder.inverse_transform(_valid_y)
@@ -315,8 +324,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=False,
-                        mall_ids=-1,
+    main_leave_one_week(offline=True,
+                        mall_ids=["m_8093", "m_4572", "m_6803", "m_9068"],
                         # "m_8093", "m_4572", "m_6803"
                         use_hyperopt=False,
                         default_scala=2,

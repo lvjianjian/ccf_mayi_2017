@@ -15,10 +15,11 @@ from util import *
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split, KFold
 from sklearn.decomposition import PCA
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier
 from hyperopt import hp, fmin, tpe, rand, space_eval
 import os, yaml
 from sklearn.svm import SVC
+from sklearn.ensemble import voting_classifier
 
 
 def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=2, save_offline_predict=False):
@@ -47,6 +48,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         df, train_cache, test_cache = get_wifi_cache2(mall_id)
         train_matrix = train_cache[2]
         test_matrix = test_cache[2]
+
         train_matrix_origin_all = train_matrix.copy()
         test_matrix_origin_all = test_matrix.copy()
         choose_strong_wifi_index_set = set()
@@ -70,8 +72,10 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         test_strong_matrix = test_matrix[:, choose_strong_wifi_index]
 
         # 将wifi 信号加上每个sample的最大wifi信号， 屏蔽个体之间接收wifi信号的差异
-        train_matrix = np.tile(-train_matrix.max(axis=1, keepdims=True), (1, train_matrix.shape[1])) + train_matrix
-        test_matrix = np.tile(-test_matrix.max(axis=1, keepdims=True), (1, test_matrix.shape[1])) + test_matrix
+        train_matrix_transform_all = np.tile(-train_matrix.max(axis=1, keepdims=True),
+                                             (1, train_matrix.shape[1])) + train_matrix
+        test_matrix_transform_all = np.tile(-test_matrix.max(axis=1, keepdims=True),
+                                            (1, test_matrix.shape[1])) + test_matrix
 
         # wifi rank info
         train = train_all[train_all.mall_id == mall_id]
@@ -163,7 +167,7 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         # _p_test_pcas = lonlat_pca.transform(test_lonlats)
 
 
-        n_estimetors = 500
+        n_estimetors = 1000
         max_features = "auto"
         _train_index, _valid_index = get_last_one_week_index(train)
         argsDict = {}
@@ -207,6 +211,9 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         pca = PCA(n_components=int(num_class * scala)).fit(train_matrix)
         train_matrix = pca.transform(train_matrix)
         test_matrix = pca.transform(test_matrix)
+        pca2 = PCA(n_components=int(num_class * scala)).fit(train_matrix_transform_all)
+        train_matrix_transform_all = pca2.transform(train_matrix_transform_all)
+        test_matrix_transform_all = pca2.transform(test_matrix_transform_all)
 
         # 时间
         preprocess_basic_time(train)
@@ -214,40 +221,134 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         train_time_features = train[["weekday", "hour"]].values
         test_time_features = test[["weekday", "hour"]].values
 
-        train_matrix = np.concatenate([train_matrix,
-                                       train_dis_matrix,
-                                       train_strong_matrix,
-                                       other_train_wifi_feature,
-                                       train_time_features,
-                                       train_lonlats
-                                       ],
-                                      axis=1)
-        test_matrix = np.concatenate([test_matrix,
-                                      test_dis_matrix,
-                                      test_strong_matrix,
-                                      other_test_wifi_feature,
-                                      test_time_features,
-                                      test_lonlats],
-                                     axis=1)
+        def get_input_combine(train_matrix_origin_all,
+                              train_matrix,
+                              train_transform_matrix,
+                              train_strong_matrix,
+                              train_wifi_rank_info,
+                              train_time,
+                              train_lonlats,
+                              train_dis_matrix):
+            inputs = []
+            train_matrix1 = np.concatenate([train_matrix_origin_all,
+                                            train_time,
+                                            train_lonlats],
+                                           axis=1)
+            inputs.append(train_matrix1)
+            train_matrix1 = np.concatenate([train_matrix,
+                                            train_strong_matrix,
+                                            train_wifi_rank_info,
+                                            train_time,
+                                            train_lonlats],
+                                           axis=1)
+            inputs.append(train_matrix1)
+            train_matrix1 = np.concatenate([train_transform_matrix,
+                                            train_strong_matrix,
+                                            train_wifi_rank_info,
+                                            train_time,
+                                            train_lonlats],
+                                           axis=1)
+            inputs.append(train_matrix1)
 
-        train_matrix = train_matrix_origin_all
-        test_matrix = test_matrix_origin_all
+            train_matrix1 = np.concatenate([train_matrix_origin_all,
+                                            train_time,
+                                            train_dis_matrix],
+                                           axis=1)
+            inputs.append(train_matrix1)
+            train_matrix1 = np.concatenate([train_matrix,
+                                            train_strong_matrix,
+                                            train_wifi_rank_info,
+                                            train_time,
+                                            train_dis_matrix],
+                                           axis=1)
+            inputs.append(train_matrix1)
+            train_matrix1 = np.concatenate([train_transform_matrix,
+                                            train_strong_matrix,
+                                            train_wifi_rank_info,
+                                            train_time,
+                                            train_dis_matrix],
+                                           axis=1)
+            inputs.append(train_matrix1)
+
+            # no time
+            train_matrix1 = np.concatenate([train_matrix_origin_all,
+                                            train_lonlats],
+                                           axis=1)
+            inputs.append(train_matrix1)
+            train_matrix1 = np.concatenate([train_matrix,
+                                            train_strong_matrix,
+                                            train_wifi_rank_info,
+                                            train_lonlats],
+                                           axis=1)
+            inputs.append(train_matrix1)
+            train_matrix1 = np.concatenate([train_transform_matrix,
+                                            train_strong_matrix,
+                                            train_wifi_rank_info,
+                                            train_lonlats],
+                                           axis=1)
+            inputs.append(train_matrix1)
+
+            train_matrix1 = np.concatenate([train_matrix_origin_all,
+                                            train_dis_matrix],
+                                           axis=1)
+            inputs.append(train_matrix1)
+            train_matrix1 = np.concatenate([train_matrix,
+                                            train_strong_matrix,
+                                            train_wifi_rank_info,
+                                            train_dis_matrix],
+                                           axis=1)
+            inputs.append(train_matrix1)
+            train_matrix1 = np.concatenate([train_transform_matrix,
+                                            train_strong_matrix,
+                                            train_wifi_rank_info,
+                                            train_dis_matrix],
+                                           axis=1)
+            inputs.append(train_matrix1)
+            return inputs
+
+        train_inputs = get_input_combine(train_matrix_origin_all,
+                                         train_matrix,
+                                         train_matrix_transform_all,
+                                         train_strong_matrix,
+                                         other_train_wifi_feature,
+                                         train_time_features,
+                                         train_lonlats,
+                                         train_dis_matrix)
+
+        test_inputs = get_input_combine(test_matrix_origin_all,
+                                        test_matrix,
+                                        test_matrix_transform_all,
+                                        test_strong_matrix,
+                                        other_test_wifi_feature,
+                                        test_time_features,
+                                        test_lonlats,
+                                        test_dis_matrix)
+
         print "num_class", num_class
 
         print "train", mall_id
 
         _index = 0
         for _train_index, _valid_index in [(_train_index, _valid_index)]:
-            _train_x = train_matrix[_train_index]
-            _train_y = y[_train_index]
+            predicts_all = []
+            for train_matrix, test_matrix in zip(train_inputs, test_inputs):
+                _train_x = train_matrix[_train_index]
+                _train_y = y[_train_index]
+                _valid_x = train_matrix[_valid_index]
+                _valid_y = y[_valid_index]
+                rf = RandomForestClassifier(n_estimators=500, n_jobs=-1, max_features=max_features)
+                rf.fit(_train_x, _train_y)
+                predict = rf.predict(_valid_x)
+                predicts_all.append(predict)
 
-            _valid_x = train_matrix[_valid_index]
-            _valid_y = y[_valid_index]
+            def voting(predicts, mode="hard"):
+                predicts_all = np.asarray(predicts).T
+                maj = np.apply_along_axis(lambda x: np.argmax(np.bincount(x)),
+                                          axis=1,
+                                          arr=predicts_all)
+                return maj
 
-            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, max_features=max_features)
-            rf.fit(_train_x, _train_y)
-
-            predict = rf.predict(_valid_x)
+            predict = voting(predicts_all)
             predict = label_encoder.inverse_transform(predict)
             offline_predicts[_index][mall_id] = predict
             _real_y = label_encoder.inverse_transform(_valid_y)
@@ -274,9 +375,10 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
         if save_offline_predict:
             pd.DataFrame({"predict": offline_predicts[_index][_mall_id],
-                          "real": offline_reals[_index][_mall_id]}).to_csv("../result/offline_predict/{}_{}.csv".format(_mall_id,
-                                                                                                                        _index),
-                                                                           index=None)
+                          "real": offline_reals[_index][_mall_id]}).to_csv(
+                    "../result/offline_predict/{}_{}.csv".format(_mall_id,
+                                                                 _index),
+                    index=None)
     accs = []
     for _index in range(kfold):
         all_predict = np.concatenate(offline_reals[_index].values())
@@ -315,8 +417,8 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=False,
-                        mall_ids=-1,
+    main_leave_one_week(offline=True,
+                        mall_ids=["m_8093"],
                         # "m_8093", "m_4572", "m_6803"
                         use_hyperopt=False,
                         default_scala=2,

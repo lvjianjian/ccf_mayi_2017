@@ -22,7 +22,7 @@ from sklearn.svm import SVC
 
 
 def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=2, save_offline_predict=False):
-    model_name = "rf_leave_one_week_wifi_matrix_strong_wifi_matrix_rank2_lonlat_matrix"
+    model_name = "diff_input_rf_leave_one_week_wifi_matrix_strong_wifi_matrix_rank2_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -214,21 +214,21 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         train_time_features = train[["weekday", "hour"]].values
         test_time_features = test[["weekday", "hour"]].values
 
-        train_matrix = np.concatenate([train_matrix,
-                                       train_dis_matrix,
-                                       train_strong_matrix,
-                                       other_train_wifi_feature,
-                                       train_time_features,
-                                       train_lonlats
-                                       ],
-                                      axis=1)
-        test_matrix = np.concatenate([test_matrix,
-                                      test_dis_matrix,
-                                      test_strong_matrix,
-                                      other_test_wifi_feature,
-                                      test_time_features,
-                                      test_lonlats],
-                                     axis=1)
+        # train_matrix = np.concatenate([train_matrix,
+        #                                train_dis_matrix,
+        #                                train_strong_matrix,
+        #                                other_train_wifi_feature,
+        #                                train_time_features,
+        #                                train_lonlats
+        #                                ],
+        #                               axis=1)
+        # test_matrix = np.concatenate([test_matrix,
+        #                               test_dis_matrix,
+        #                               test_strong_matrix,
+        #                               other_test_wifi_feature,
+        #                               test_time_features,
+        #                               test_lonlats],
+        #                              axis=1)
 
         train_matrix = train_matrix_origin_all
         test_matrix = test_matrix_origin_all
@@ -238,17 +238,64 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
         _index = 0
         for _train_index, _valid_index in [(_train_index, _valid_index)]:
-            _train_x = train_matrix[_train_index]
+
+            input1 = [train_matrix_origin_all, train_strong_matrix, train_lonlats, train_time_features]
+            input1_test = [test_matrix_origin_all,
+                           test_strong_matrix,
+                           test_lonlats,
+                           test_time_features]
+            base = []
             _train_y = y[_train_index]
-
-            _valid_x = train_matrix[_valid_index]
             _valid_y = y[_valid_index]
+            best_predict = None
+            best_acc = 0
+            for _i in range(2):  # 选择用origin_all 还是用 strong_matrix
+                train_matrix = input1[_i]
+                _train_x = train_matrix[_train_index]
+                _valid_x = train_matrix[_valid_index]
 
-            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, max_features=max_features)
-            rf.fit(_train_x, _train_y)
+                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
+                rf.fit(_train_x, _train_y)
 
-            predict = rf.predict(_valid_x)
-            predict = label_encoder.inverse_transform(predict)
+                predict = rf.predict(_valid_x)
+                base.append(acc(predict, _valid_y))
+                if base[_i] > best_acc:
+                    best_acc = base[_i]
+                    best_predict = predict
+            assert len(base) == 2
+            if base[0] > base[1]:
+                base_matrix = input1[0]
+                base_test_matrix = input1_test[0]
+                base_acc = base[0]
+                choose = [0]
+            else:
+                base_matrix = input1[1]
+                base_test_matrix = input1_test[1]
+                base_acc = base[1]
+                choose = [1]
+
+            # 再选择是否加入lonlat 和 time
+            extra_accs = [base_acc]
+            extras = [[2], [3], [2, 3]]
+            for extra_info_index in extras:
+                extra_infos = [base_matrix]
+                for _i in extra_info_index:
+                    extra_infos.append(input1[_i])
+                train_matrix = np.concatenate(extra_infos, axis=1)
+                _train_x = train_matrix[_train_index]
+
+                _valid_x = train_matrix[_valid_index]
+
+                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
+                rf.fit(_train_x, _train_y)
+
+                predict = rf.predict(_valid_x)
+                _acc = acc(predict, _valid_y)
+                extra_accs.append(_acc)
+                if _acc > best_acc:
+                    best_acc = _acc
+                    best_predict = predict
+            predict = label_encoder.inverse_transform(best_predict)
             offline_predicts[_index][mall_id] = predict
             _real_y = label_encoder.inverse_transform(_valid_y)
             offline_reals[_index][mall_id] = _real_y
@@ -256,7 +303,20 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
             print mall_id + "'s acc is", acc(predict, _real_y)
 
         if not offline:  # 线上
-            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, max_features=max_features)
+            assert len(extra_accs) == 4
+            ch = np.argmax(extra_accs)
+            inputs_train = [base_matrix]
+            inputs_test = [base_test_matrix]
+            if ch > 0:
+                for _i in extras[ch - 1]:
+                    choose.append(_i)
+                    inputs_train.append(input1[_i])
+                    inputs_test.append(input1_test[_i])
+            print "choose", choose
+            train_matrix = np.concatenate(inputs_train, axis=1)
+            test_matrix = np.concatenate(inputs_test, axis=1)
+
+            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
             rf.fit(train_matrix, y)
             predict = rf.predict(test_matrix)
             predict = label_encoder.inverse_transform(predict)
@@ -274,9 +334,10 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 
         if save_offline_predict:
             pd.DataFrame({"predict": offline_predicts[_index][_mall_id],
-                          "real": offline_reals[_index][_mall_id]}).to_csv("../result/offline_predict/{}_{}.csv".format(_mall_id,
-                                                                                                                        _index),
-                                                                           index=None)
+                          "real": offline_reals[_index][_mall_id]}).to_csv(
+                    "../result/offline_predict/{}_{}.csv".format(_mall_id,
+                                                                 _index),
+                    index=None)
     accs = []
     for _index in range(kfold):
         all_predict = np.concatenate(offline_reals[_index].values())
