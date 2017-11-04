@@ -19,14 +19,14 @@ from sklearn.ensemble import RandomForestClassifier
 from hyperopt import hp, fmin, tpe, rand, space_eval
 import os, yaml
 from sklearn.svm import SVC
-
+from mlxtend.classifier import EnsembleVoteClassifier, StackingCVClassifier, StackingClassifier
 
 def main_leave_one_week(offline, mall_ids=-1,
                         use_hyperopt=False,
                         default_scala=2,
                         save_offline_predict=False,
-                        choose_input=None):
-
+                        choose_input=None,
+                        part_shops=None):
     model_name = "diff_input_rf_leave_one_week_wifi_matrix_strong_wifi_matrix_rank2_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
@@ -54,29 +54,11 @@ def main_leave_one_week(offline, mall_ids=-1,
         test_matrix = test_cache[2]
         train_matrix_origin_all = train_matrix.copy()
         test_matrix_origin_all = test_matrix.copy()
-        choose_strong_wifi_index_set = set()
 
-        for _sig_max, _sig_num in zip([-90], [6]):
-            strong_sig_index = zip(range(train_matrix.shape[0]),
-                                   list((train_matrix > _sig_max).sum(axis=0)))
-            strong_sig_index = sorted(strong_sig_index, key=lambda x: -x[1])
-            strong_sig_worst = _sig_num
-            for _index in range(len(strong_sig_index)):
-                if strong_sig_index[_index][1] < strong_sig_worst:
-                    break
-            strong_sig_choose = _index - 1
-            choose_strong_wifi_index = [_wi[0] for _wi in strong_sig_index[:strong_sig_choose]]
-
-            choose_strong_wifi_index_set = choose_strong_wifi_index_set.union(set(choose_strong_wifi_index))
-            print len(choose_strong_wifi_index_set)
         # print choose_strong_wifi_index
-        choose_strong_wifi_index = list(choose_strong_wifi_index_set)
+        choose_strong_wifi_index = choose_string_wifi_index(-90, 6, train_matrix)
         train_strong_matrix = train_matrix[:, choose_strong_wifi_index]
         test_strong_matrix = test_matrix[:, choose_strong_wifi_index]
-
-        # 将wifi 信号加上每个sample的最大wifi信号， 屏蔽个体之间接收wifi信号的差异
-        train_matrix = np.tile(-train_matrix.max(axis=1, keepdims=True), (1, train_matrix.shape[1])) + train_matrix
-        test_matrix = np.tile(-test_matrix.max(axis=1, keepdims=True), (1, test_matrix.shape[1])) + test_matrix
 
         # wifi rank info
         train = train_all[train_all.mall_id == mall_id]
@@ -170,7 +152,9 @@ def main_leave_one_week(offline, mall_ids=-1,
 
         n_estimetors = 1000
         max_features = "auto"
-        _train_index, _valid_index = get_last_one_week_index(train)
+        _train_index, _valid_index = get_last_one_week_index(train, part_shops=part_shops)
+        print _train_index.shape
+        print _valid_index.shape
         argsDict = {}
         if use_hyperopt:
             def objective(argsDict):
@@ -218,7 +202,10 @@ def main_leave_one_week(offline, mall_ids=-1,
         preprocess_basic_time(test)
         train_time_features = train[["weekday", "hour"]].values
         test_time_features = test[["weekday", "hour"]].values
-
+        train_h_features = train[["hour"]].values
+        test_h_features = test[["hour"]].values
+        train_w_features = train[["weekday"]].values
+        test_w_features = test[["weekday"]].values
         # train_matrix = np.concatenate([train_matrix,
         #                                train_dis_matrix,
         #                                train_strong_matrix,
@@ -247,13 +234,18 @@ def main_leave_one_week(offline, mall_ids=-1,
                       train_lonlats,
                       train_time_features,
                       train_matrix,
-                      other_train_wifi_feature]
+                      other_train_wifi_feature,
+                      train_h_features,
+                      train_w_features]
+
             input1_test = [test_matrix_origin_all,
                            test_strong_matrix,
                            test_lonlats,
                            test_time_features,
                            test_matrix,
-                           other_test_wifi_feature]
+                           other_test_wifi_feature,
+                           test_h_features,
+                           test_w_features]
 
             if choose_input is None:
                 base = []
@@ -266,7 +258,7 @@ def main_leave_one_week(offline, mall_ids=-1,
                     _train_x = _train_matrix[_train_index]
                     _valid_x = _train_matrix[_valid_index]
 
-                    rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
+                    rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, random_state=2017)
                     rf.fit(_train_x, _train_y)
 
                     predict = rf.predict(_valid_x)
@@ -292,7 +284,7 @@ def main_leave_one_week(offline, mall_ids=-1,
                 _train_x = _train_matrix[_train_index]
                 _valid_x = _train_matrix[_valid_index]
 
-                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
+                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, random_state=2017)
                 rf.fit(_train_x, _train_y)
 
                 predict = rf.predict(_valid_x)
@@ -314,9 +306,10 @@ def main_leave_one_week(offline, mall_ids=-1,
                         extra_infos.append(input1[_i])
                     _train_matrix = np.concatenate(extra_infos, axis=1)
                     _train_x = _train_matrix[_train_index]
+
                     _valid_x = _train_matrix[_valid_index]
 
-                    rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
+                    rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, random_state=2017)
                     rf.fit(_train_x, _train_y)
 
                     predict = rf.predict(_valid_x)
@@ -329,14 +322,22 @@ def main_leave_one_week(offline, mall_ids=-1,
                 t = []
                 for _i in choose_input:
                     t.append(input1[_i])
+
                 _train_matrix = np.concatenate(t, axis=1)
+
                 _train_x = _train_matrix[_train_index]
                 _valid_x = _train_matrix[_valid_index]
                 _train_y = y[_train_index]
                 _valid_y = y[_valid_index]
-                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
-                rf.fit(_train_x, _train_y)
 
+                # from sklearn.preprocessing import MinMaxScaler
+                # mms = MinMaxScaler().fit(_train_x)
+                # _train_x = mms.transform(_train_x)
+                # _valid_x = mms.transform(_valid_x)
+                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, random_state=2017, max_features=0.7)
+
+                # _train_x, _train_y = expansion(_train_x, _train_y)
+                rf.fit(_train_x, _train_y)
                 best_predict = rf.predict(_valid_x)
 
             predict = label_encoder.inverse_transform(best_predict)
@@ -360,7 +361,7 @@ def main_leave_one_week(offline, mall_ids=-1,
             train_matrix = np.concatenate(inputs_train, axis=1)
             test_matrix = np.concatenate(inputs_test, axis=1)
 
-            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
+            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, random_state=2017)
             rf.fit(train_matrix, y)
             predict = rf.predict(test_matrix)
             predict = label_encoder.inverse_transform(predict)
@@ -422,7 +423,8 @@ if __name__ == '__main__':
     # main(offline=False)
     main_leave_one_week(offline=True,
                         mall_ids=["m_7168"],
-                        choose_input=[0, 2, 3],
+                        choose_input=[1, 2, 3],
+                        part_shops=None,  # ["s_293704", "s_2310712"]
                         # "m_8093", "m_4572", "m_6803"
                         use_hyperopt=False,
                         default_scala=2,

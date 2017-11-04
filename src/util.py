@@ -739,12 +739,25 @@ def bearing(lng1, lat1, lng2, lat2):  # 方位计算
     return np.degrees(np.arctan2(y, x))
 
 
-def get_last_one_week_index(train):
-    train["i_loc"] = range(train.shape[0])
+def get_last_one_week_index(train, part_shops=None):
+    if "i_loc" not in train.columns:
+        train["i_loc"] = range(train.shape[0])
+    if part_shops is not None:
+        train = train[train.shop_id.isin(part_shops)]
     dt = pd.to_datetime(train["time_stamp"]).dt.day
     valid_index = train[dt > 24]["i_loc"].values
     train_index = train[dt <= 24]["i_loc"].values
     return train_index, valid_index
+
+
+def get_part_time_index(train, s_dt, e_dt, part_shops=None):
+    if "i_loc" not in train.columns:
+        train["i_loc"] = range(train.shape[0])
+    if part_shops is not None:
+        train = train[train.shop_id.isin(part_shops)]
+    dt = pd.to_datetime(train["time_stamp"]).dt.day
+    part_index = train[dt.isin(range(s_dt, e_dt))]["i_loc"].values
+    return part_index
 
 def topk_acc(predict_list, real):
     x = np.zeros(real.shape[0])
@@ -752,6 +765,45 @@ def topk_acc(predict_list, real):
         x[predict == real] = 1
     return (x == 1).sum() / float(x.shape[0])
 
+def expansion(trainx, trainy, cv=2):
+    # 对样本少的进行复制扩充
+    bin = np.bincount(trainy)
+    labels = np.unique(trainy)
+    l = np.asarray(range(np.max(labels) + 1))[bin < cv]
+    l = np.intersect1d(l, labels)
+    for _l in l:
+        n = (trainy == _l).sum()
+        n = int(np.ceil(float(cv) / n - 1))
+        trainx = np.concatenate([trainx, np.tile(trainx[trainy == _l], (n, 1))], axis=0)
+        trainy = np.concatenate([trainy, np.tile(trainy[trainy == _l], (n,))], axis=0)
+    return trainx, trainy
+
+def choose_strong_wifi_index(sig = [-115], split = [6], train_matrix = None):
+    if isinstance(sig, int):
+        sig = [sig]
+    if isinstance(split, int):
+        split = [split]
+    assert isinstance(sig, list)
+    assert isinstance(split, list)
+    assert len(sig) == len(split)
+    assert isinstance(train_matrix, np.ndarray)
+
+    choose_strong_wifi_index_set = set()
+
+    for _sig_max, _sig_num in zip(sig, split):
+        strong_sig_index = zip(range(train_matrix.shape[0]),
+                               list((train_matrix > _sig_max).sum(axis=0)))
+        strong_sig_index = sorted(strong_sig_index, key=lambda x: -x[1])
+        strong_sig_worst = _sig_num
+        for _index in range(len(strong_sig_index)):
+            if strong_sig_index[_index][1] < strong_sig_worst:
+                break
+        strong_sig_choose = _index - 1
+        choose_strong_wifi_index = [_wi[0] for _wi in strong_sig_index[:strong_sig_choose]]
+
+        choose_strong_wifi_index_set = choose_strong_wifi_index_set.union(set(choose_strong_wifi_index))
+    choose_strong_wifi_index = list(choose_strong_wifi_index_set)
+    return choose_strong_wifi_index
 
 if __name__ == '__main__':
     # save_result(None, "../result/test", ["a", "b"])

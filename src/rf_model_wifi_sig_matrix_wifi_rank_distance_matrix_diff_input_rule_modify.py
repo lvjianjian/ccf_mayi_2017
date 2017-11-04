@@ -19,7 +19,8 @@ from sklearn.ensemble import RandomForestClassifier
 from hyperopt import hp, fmin, tpe, rand, space_eval
 import os, yaml
 from sklearn.svm import SVC
-
+from relu_modify import user_modify,shop_modify
+from mlxtend.classifier import StackingCVClassifier
 
 def main_leave_one_week(offline, mall_ids=-1,
                         use_hyperopt=False,
@@ -27,7 +28,7 @@ def main_leave_one_week(offline, mall_ids=-1,
                         save_offline_predict=False,
                         choose_input=None):
 
-    model_name = "diff_input_rf_leave_one_week_wifi_matrix_strong_wifi_matrix_rank2_lonlat_matrix"
+    model_name = "balance_diff_input_rf_leave_one_week_wifi_matrix_strong_wifi_matrix_rank2_lonlat_matrix"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -37,6 +38,8 @@ def main_leave_one_week(offline, mall_ids=-1,
     offline_reals = []
     all_rowid = {}
     all_predicts = {}
+    all_predicts_modify = {}
+    online_modify_num = 0
     if os.path.exists("../data/best_scala/best_scala_{}.yaml".format(model_name)):
         best_scala = yaml.load(open("../data/best_scala/best_scala_{}.yaml".format(model_name), "r"))
     else:
@@ -152,8 +155,7 @@ def main_leave_one_week(offline, mall_ids=-1,
         for _s, _index in d.items():
             _shop = shop_info[shop_info.shop_id == _s][["shop_longitude", "shop_latitude"]].values
             _shop = np.tile(_shop, (test_lonlats.shape[0], 1))
-            verctors.append(
-                    haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
+            verctors.append(haversine(test_lonlats[:, 0], test_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
             # verctors.append(bearing(train_lonlats[:, 0], train_lonlats[:, 1], _shop[:, 0], _shop[:, 1]).reshape((-1, 1)))
         test_dis_matrix = np.concatenate(verctors, axis=1)
 
@@ -218,7 +220,10 @@ def main_leave_one_week(offline, mall_ids=-1,
         preprocess_basic_time(test)
         train_time_features = train[["weekday", "hour"]].values
         test_time_features = test[["weekday", "hour"]].values
-
+        train_h_features = train[["hour"]].values
+        test_h_features = test[["hour"]].values
+        train_w_features = train[["weekday"]].values
+        test_w_features = test[["weekday"]].values
         # train_matrix = np.concatenate([train_matrix,
         #                                train_dis_matrix,
         #                                train_strong_matrix,
@@ -247,84 +252,57 @@ def main_leave_one_week(offline, mall_ids=-1,
                       train_lonlats,
                       train_time_features,
                       train_matrix,
-                      other_train_wifi_feature]
+                      other_train_wifi_feature,
+                      train_h_features,
+                      train_w_features]
             input1_test = [test_matrix_origin_all,
                            test_strong_matrix,
                            test_lonlats,
                            test_time_features,
                            test_matrix,
-                           other_test_wifi_feature]
+                           other_test_wifi_feature,
+                           test_h_features,
+                           test_w_features]
 
             if choose_input is None:
-                base = []
                 _train_y = y[_train_index]
                 _valid_y = y[_valid_index]
                 best_predict = None
                 best_acc = 0
-                for _i in range(2):  # 选择用origin_all 还是用 strong_matrix
-                    _train_matrix = input1[_i]
+                best_choose = None
+                if mall_id == "m_2270":
+                    best_choose = [4, 5]
+                    t = []
+                    for _i in best_choose:
+                        t.append(input1[_i])
+                    _train_matrix = np.concatenate(t, axis=1)
                     _train_x = _train_matrix[_train_index]
                     _valid_x = _train_matrix[_valid_index]
-
-                    rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
+                    rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, random_state=2017, class_weight="balanced")
                     rf.fit(_train_x, _train_y)
-
-                    predict = rf.predict(_valid_x)
-                    base.append(acc(predict, _valid_y))
-                    if base[_i] > best_acc:
-                        best_acc = base[_i]
-                        best_predict = predict
-
-                assert len(base) == 2
-                if base[0] > base[1]:
-                    base_matrix = input1[0]
-                    base_test_matrix = input1_test[0]
-                    base_acc = base[0]
-                    choose = [0]
+                    best_predict = rf.predict(_valid_x)
+                    best_acc = acc(best_predict, _valid_y)
                 else:
-                    base_matrix = input1[1]
-                    base_test_matrix = input1_test[1]
-                    base_acc = base[1]
-                    choose = [1]
 
-                # 尝试train_matrix + other_train_wifi_feature
-                _train_matrix = np.concatenate([input1[4], input1[5]], axis=1)
-                _train_x = _train_matrix[_train_index]
-                _valid_x = _train_matrix[_valid_index]
+                    for _l1 in [[0], [1]]:
+                        for _l2 in [[], [2]]:
+                            for _l3 in [[3], [6], [7]]:
+                                choose = _l1 + _l2 + _l3
+                                t = []
+                                for _i in choose:
+                                    t.append(input1[_i])
+                                _train_matrix = np.concatenate(t, axis=1)
+                                _train_x = _train_matrix[_train_index]
+                                _valid_x = _train_matrix[_valid_index]
+                                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, random_state=2017, class_weight="balanced")
+                                rf.fit(_train_x, _train_y)
+                                predict = rf.predict(_valid_x)
+                                _acc = acc(predict, _valid_y)
+                                if _acc > best_acc:
+                                    best_acc = _acc
+                                    best_predict = predict
+                                    best_choose = choose
 
-                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
-                rf.fit(_train_x, _train_y)
-
-                predict = rf.predict(_valid_x)
-                _acc = acc(predict, _valid_y)
-                if _acc > best_acc:
-                    best_acc = _acc
-                    base_acc = [_acc]
-                    best_predict = predict
-                    choose = [4, 5]
-                    base_matrix = np.concatenate([input1[4], input1[5]], axis=1)
-                    base_test_matrix = np.concatenate([input1_test[4], input1_test[5]], axis=1)
-
-                # 再选择是否加入lonlat 和 time
-                extra_accs = [base_acc]
-                extras = [[2], [3], [2, 3]]
-                for extra_info_index in extras:
-                    extra_infos = [base_matrix]
-                    for _i in extra_info_index:
-                        extra_infos.append(input1[_i])
-                    _train_matrix = np.concatenate(extra_infos, axis=1)
-                    _train_x = _train_matrix[_train_index]
-                    _valid_x = _train_matrix[_valid_index]
-
-                    rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
-                    rf.fit(_train_x, _train_y)
-
-                    predict = rf.predict(_valid_x)
-                    _acc = acc(predict, _valid_y)
-                    extra_accs.append(_acc)
-                    if _acc > best_acc:
-                        best_acc = _acc
-                        best_predict = predict
             else:
                 t = []
                 for _i in choose_input:
@@ -334,7 +312,7 @@ def main_leave_one_week(offline, mall_ids=-1,
                 _valid_x = _train_matrix[_valid_index]
                 _train_y = y[_train_index]
                 _valid_y = y[_valid_index]
-                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
+                rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, random_state=2017, class_weight="balanced")
                 rf.fit(_train_x, _train_y)
 
                 best_predict = rf.predict(_valid_x)
@@ -347,25 +325,51 @@ def main_leave_one_week(offline, mall_ids=-1,
             print mall_id + "'s acc is", acc(predict, _real_y)
 
         if not offline:  # 线上
-            assert len(extra_accs) == 4
-            ch = np.argmax(extra_accs)
-            inputs_train = [base_matrix]
-            inputs_test = [base_test_matrix]
-            if ch > 0:
-                for _i in extras[ch - 1]:
-                    choose.append(_i)
-                    inputs_train.append(input1[_i])
-                    inputs_test.append(input1_test[_i])
+            choose = best_choose
+            inputs_train = []
+            inputs_test = []
+            for _i in choose:
+                inputs_train.append(input1[_i])
+                inputs_test.append(input1_test[_i])
             print "choose", choose
             train_matrix = np.concatenate(inputs_train, axis=1)
             test_matrix = np.concatenate(inputs_test, axis=1)
 
-            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1)
+            rf = RandomForestClassifier(n_estimators=n_estimetors, n_jobs=-1, random_state=2017, class_weight="balanced")
             rf.fit(train_matrix, y)
             predict = rf.predict(test_matrix)
             predict = label_encoder.inverse_transform(predict)
             all_predicts[mall_id] = predict
             all_rowid[mall_id] = test_all[np.in1d(test_all.index, test_index)].row_id.values
+            # 规则修正
+            _p = train
+            _p_t = test
+            user_dict = user_modify(_p, _p_t)
+            predict_modify = []
+            for _u, _p in zip(list(_p_t.user_id), list(predict)):
+                if _u in user_dict:
+                    predict_modify.append(user_dict[_u])
+                    if user_dict[_u] != _p:
+                        online_modify_num += 1
+                else:
+                    predict_modify.append(_p)
+            predict_modify = np.asarray(predict_modify)
+
+
+            modify_shopid = shop_modify(train)
+            predict_modify2 = []
+            if modify_shopid is not None:
+                for _h, _p in zip(list(test.dt.dt.hour),list(predict_modify)):
+                    if _h <= 8:
+                        predict_modify2.append(modify_shopid)
+                        if(modify_shopid != _p):
+                            online_modify_num += 1
+                    else:
+                        predict_modify2.append(_p)
+            else:
+                predict_modify2 = predict_modify
+            predict_modify2 = np.asarray(predict_modify2)
+            all_predicts_modify[mall_id] = predict_modify2
 
     result = {}
     for _mall_id in mall_ids:
@@ -416,13 +420,21 @@ def main_leave_one_week(offline, mall_ids=-1,
                                                        "pca_dis_scala_{}".format(pca_dis_scala),
                                                        n_estimetors)
         save_result(result, path, None)
-
+        all_predicts_modify = np.concatenate(all_predicts_modify.values())
+        result = pd.DataFrame(data={"row_id": all_rowid, "shop_id": all_predicts_modify})
+        result.sort_values(by="row_id", inplace=True)
+        path = "../result/online/{}_{}_{}_es{}_modify".format(model_name,
+                                                       "num_class_{}".format(scala),
+                                                       "pca_dis_scala_{}".format(pca_dis_scala),
+                                                       n_estimetors)
+        save_result(result, path, None)
+        print "modify", online_modify_num
 
 if __name__ == '__main__':
     # main(offline=False)
-    main_leave_one_week(offline=True,
-                        mall_ids=["m_7168"],
-                        choose_input=[0, 2, 3],
+    main_leave_one_week(offline=False,
+                        mall_ids=-1,
+                        choose_input=None,
                         # "m_8093", "m_4572", "m_6803"
                         use_hyperopt=False,
                         default_scala=2,

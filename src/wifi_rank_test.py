@@ -190,10 +190,11 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
         _train_index, _valid_index = get_last_one_week_index(train)
 
 
-        train_matrix2 = np.concatenate([train_strong_matrix,
-                                       train_lonlats,
-                                        # other_train_wifi_feature
-                                        # train_w_features,
+        train_matrix2 = np.concatenate([
+                                        train_matrix,
+                                        # train_strong_matrix,
+                                        # train_lonlats,
+                                        other_train_wifi_feature,
                                         # train_wh_features,
                                         ], axis=1)
 
@@ -361,6 +362,6 @@ def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=
 if __name__ == '__main__':
     # main(offline=False)
     main_leave_one_week(offline=True,
-                        mall_ids=["m_6803"],
+                        mall_ids=["m_2270"],
                         use_hyperopt=False,
                         default_scala=1)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
