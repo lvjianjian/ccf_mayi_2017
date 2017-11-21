@@ -19,7 +19,7 @@ from sklearn.multiclass import OneVsRestClassifier, OneVsOneClassifier
 from sklearn.linear_model import LogisticRegression
 
 def main_leave_one_week(offline, mall_ids=-1, save_offline_predict=False):
-    model_name = "stack2_balance_strong_matrix_lonlat_wh"
+    model_name = "stack_balance_strong_matrix_lonlat_wh"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -65,7 +65,8 @@ def main_leave_one_week(offline, mall_ids=-1, save_offline_predict=False):
         preprocess_basic_wifi(test)
         train_time_features = train[["weekday", "hour", "is_weekend"]].values
         test_time_features = test[["weekday", "hour", "is_weekend"]].values
-
+        train_wh_features = train[["weekday", "hour"]].values
+        test_wh_features = test[["weekday", "hour"]].values
 
         # 是否连接wifi
         train_connect_wifi = (train.basic_wifi_info.map(lambda x: len(x[1])).values > 0).astype(int).reshape(-1,1)
@@ -84,17 +85,17 @@ def main_leave_one_week(offline, mall_ids=-1, save_offline_predict=False):
         # concatenate train/test features
         train_matrix = np.concatenate([train_strong_matrix,
                                        train_lonlats,
-                                       train_time_features,
-                                       train_connect_wifi,
-                                       train_search_wifi_size
+                                       train_wh_features,
+                                       # train_connect_wifi,
+                                       # train_search_wifi_size
                                        ],
                                       axis=1)
 
         test_matrix = np.concatenate([test_strong_matrix,
                                       test_lonlats,
-                                      test_time_features,
-                                      test_connect_wifi,
-                                      test_search_wifi_size
+                                      test_wh_features,
+                                      # test_connect_wifi,
+                                      # test_search_wifi_size
                                       ],
                                      axis=1)
 
