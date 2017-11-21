@@ -19,6 +19,7 @@ from hyperopt import hp, fmin, tpe, rand, space_eval
 import os, yaml
 from stacking import Stacking
 
+
 def main_leave_one_week(offline, mall_ids=-1, use_hyperopt=False, default_scala=2, save_offline_predict=False):
     model_name = "stacking_leave_one_week_wifi_matrix_strong_wifi_matrix_rank2_lonlat_matrix"
     train_all = load_train()

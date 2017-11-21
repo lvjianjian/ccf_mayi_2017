@@ -19,6 +19,8 @@ import lightgbm as lgb
 from hyperopt import hp, fmin, tpe, rand, space_eval
 import yaml
 import os
+from lightgbm.sklearn import  LGBMClassifier
+from sklearn.naive_bayes import MultinomialNB
 
 
 def main(offline):

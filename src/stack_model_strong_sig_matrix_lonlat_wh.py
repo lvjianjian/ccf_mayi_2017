@@ -13,13 +13,13 @@
 
 from util import *
 from sklearn.preprocessing import LabelEncoder
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, ExtraTreesRegressor
 from mlxtend.classifier import StackingCVClassifier
-from sklearn.multiclass import OneVsRestClassifier
-
+from sklearn.multiclass import OneVsRestClassifier, OneVsOneClassifier
+from sklearn.linear_model import LogisticRegression
 
 def main_leave_one_week(offline, mall_ids=-1, save_offline_predict=False):
-    model_name = "stack_balance_strong_matrix_lonlat_wh"
+    model_name = "stack2_balance_strong_matrix_lonlat_wh"
     train_all = load_train()
     test_all = load_testA()
     shop_info = load_shop_info()
@@ -61,8 +61,21 @@ def main_leave_one_week(offline, mall_ids=-1, save_offline_predict=False):
         # weekday and hour
         preprocess_basic_time(train)
         preprocess_basic_time(test)
-        train_time_features = train[["weekday", "hour"]].values
-        test_time_features = test[["weekday", "hour"]].values
+        preprocess_basic_wifi(train)
+        preprocess_basic_wifi(test)
+        train_time_features = train[["weekday", "hour", "is_weekend"]].values
+        test_time_features = test[["weekday", "hour", "is_weekend"]].values
+
+
+        # 是否连接wifi
+        train_connect_wifi = (train.basic_wifi_info.map(lambda x: len(x[1])).values > 0).astype(int).reshape(-1,1)
+        test_connect_wifi = (test.basic_wifi_info.map(lambda x: len(x[1])).values > 0).astype(int).reshape(-1,1)
+
+
+        # 搜到的wifi数量
+        train_search_wifi_size = train.basic_wifi_info.map(lambda x: x[0]).values.reshape(-1, 1)
+        test_search_wifi_size= test.basic_wifi_info.map(lambda x: x[0]).values.reshape(-1, 1)
+
 
         # lon lat
         train_lonlats = train[["longitude", "latitude"]].values
@@ -72,12 +85,16 @@ def main_leave_one_week(offline, mall_ids=-1, save_offline_predict=False):
         train_matrix = np.concatenate([train_strong_matrix,
                                        train_lonlats,
                                        train_time_features,
+                                       train_connect_wifi,
+                                       train_search_wifi_size
                                        ],
                                       axis=1)
 
         test_matrix = np.concatenate([test_strong_matrix,
                                       test_lonlats,
-                                      test_time_features
+                                      test_time_features,
+                                      test_connect_wifi,
+                                      test_search_wifi_size
                                       ],
                                      axis=1)
 
@@ -97,13 +114,12 @@ def main_leave_one_week(offline, mall_ids=-1, save_offline_predict=False):
         def get_model2():
             model2 = OneVsRestClassifier(estimator=RandomForestClassifier(n_estimators=188,
                                                                           n_jobs=-1,
-                                                                          class_weight="balanced"),
-                                         n_jobs=-1)
+                                                                          class_weight="balanced"))
             return model2
 
         # stack meta model
         def get_meta_model():
-            meta_model = RandomForestClassifier(n_estimators=666,
+            meta_model = RandomForestClassifier(n_estimators=777,
                                                 n_jobs=-1,
                                                 class_weight="balanced")
             return meta_model
@@ -184,4 +200,4 @@ if __name__ == '__main__':
     main_leave_one_week(offline=False,
                         mall_ids=-1,
                         # "m_8093", "m_4572", "m_6803"
-                        save_offline_predict=True)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]
+                        save_offline_predict=False)  # m_2467 # mall_ids=["m_690", "m_7168", "m_1375", "m_4187", "m_1920", "m_2123"]

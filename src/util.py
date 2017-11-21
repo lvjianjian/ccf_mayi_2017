@@ -19,6 +19,14 @@ from sklearn.decomposition import PCA
 import scipy.sparse as sp
 import scipy
 import os, yaml
+from sklearn.model_selection import StratifiedKFold
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import GradientBoostingClassifier,AdaBoostClassifier,RandomForestClassifier,ExtraTreesClassifier,VotingClassifier
+from sklearn.svm import SVC
+from mlxtend.classifier import StackingCVClassifier
+from sklearn.model_selection import cross_val_score
+from sklearn.linear_model import LassoCV,LogisticRegression
+
 
 # from tsne import tsne
 shop_info = None
@@ -116,7 +124,7 @@ def preprocess_basic_time(data):
     # 是否会引入序的先验？
     data.loc[:, "weekday"] = data.dt.dt.weekday
     data.loc[:, "hour"] = data.dt.dt.hour
-
+    data.loc[:, "dayofyear"] = data.dt.dt.dayofyear
     data.loc[:, "is_weekend"] = np.where((data.weekday == 5) | (data.weekday == 6), 1, 0)
     return data
 
@@ -778,7 +786,15 @@ def expansion(trainx, trainy, cv=2):
         trainy = np.concatenate([trainy, np.tile(trainy[trainy == _l], (n,))], axis=0)
     return trainx, trainy
 
+
 def choose_strong_wifi_index(sig = [-115], split = [6], train_matrix = None):
+    """
+
+    :param sig: 大于该信号强度
+    :param split: 大于sig强度的最小数量（包括）
+    :param train_matrix:
+    :return:
+    """
     if isinstance(sig, int):
         sig = [sig]
     if isinstance(split, int):
@@ -791,7 +807,7 @@ def choose_strong_wifi_index(sig = [-115], split = [6], train_matrix = None):
     choose_strong_wifi_index_set = set()
 
     for _sig_max, _sig_num in zip(sig, split):
-        strong_sig_index = zip(range(train_matrix.shape[0]),
+        strong_sig_index = zip(range(train_matrix.shape[1]),
                                list((train_matrix > _sig_max).sum(axis=0)))
         strong_sig_index = sorted(strong_sig_index, key=lambda x: -x[1])
         strong_sig_worst = _sig_num

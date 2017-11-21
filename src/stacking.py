@@ -22,7 +22,15 @@ from sklearn.base import clone
 from sklearn.model_selection._split import check_cv
 
 class Stacking(object):
-    def __init__(self, base_clses, meta_cls, use_prob=False, kfold=-1, stratify=True, Kfold_shuffle=False, num_class = None):
+
+    def __init__(self, base_clses,
+                 meta_cls,
+                 use_prob=False,
+                 kfold=-1,
+                 stratify=True,
+                 Kfold_shuffle=False,
+                 num_class = None,
+                 use_features_in_secondary = False):
         """
 
         :param base_clses: sklearn model 或者lightgbm lgb的话存入tuple("lgb", params)
@@ -37,6 +45,7 @@ class Stacking(object):
         self.Kfold_shuffle = Kfold_shuffle
         self.stratify = stratify
         self.num_class = num_class
+        self.use_feature_in_secondary = use_features_in_secondary
         if self.kfold > 0:
             self.cv = True
             self.sklearn_models = {}
@@ -59,13 +68,6 @@ class Stacking(object):
         else:
             self.cv = False
 
-    def get_best_iteration(self, name):
-        it = []
-        for _name,_bst in self.spetial_base_clses.items():
-            if _name.startswith(name):
-               it.append(_bst.best_iteration)
-        return int(np.mean(it))
-
 
     def _lgb_train(self, _cls, train_x, train_y, valid_x=None, valid_y=None):
         _train = lgb.Dataset(train_x, label=train_y)
@@ -86,7 +88,7 @@ class Stacking(object):
     def _lgb_predict(self, _cls_name, x, use_proba=False):
         bst = self.spetial_base_clses[_cls_name]
         if use_proba:
-            p = bst.predict(x, bst.best_iteration)
+            p = bst.predict(x, bst.best_iteration, raw_score = True)
         else:
             p = np.argmax(bst.predict(x, bst.best_iteration), axis=1).astype(int).reshape((-1, 1))
         return p
@@ -107,7 +109,7 @@ class Stacking(object):
             p = np.vstack(p.values()).transpose()
         return p
 
-    def fit(self, train_x, train_y, valid_x=None, valid_y=None):
+    def fit(self, train_x, train_y):
         self.split = check_cv(self.kfold, train_y, self.stratify)
         self.split.shuffle = self.Kfold_shuffle
         p_rs = []
@@ -115,18 +117,12 @@ class Stacking(object):
         if not self.cv:
             for _cls in self.base_clses:
                 if _cls[0].startswith("lgb"):
-                    p = self._lgb_train(_cls, train_x, train_y, valid_x, valid_y)
+                    p = self._lgb_train(_cls, train_x, train_y)
                     p_rs.append(p)
-                    if valid_x is not None:
-                        p = self._lgb_predict(_cls[0], valid_x, self.use_prob)
-                        v_rs.append(p)
                 else:
                     _cls[1].fit(train_x, train_y)
                     p = self._sklearn_predict(_cls[1], train_x, self.use_prob)
                     p_rs.append(p)
-                    if valid_x is not None:
-                        p = self._sklearn_predict(_cls[1], valid_x, self.use_prob)
-                        v_rs.append(p)
 
         else:
             for _cls in self.base_clses:
@@ -138,18 +134,15 @@ class Stacking(object):
                         _train_x = train_x[_train_index]
                         _train_y = train_y[_train_index]
                         _test_x = train_x[_test_index]
-
+                        _test_y = train_y[_test_index]
                         lgb_name = _cls[0] + "_" + str(_i)
                         self._lgb_train(self.spetial_base_clses_params[lgb_name],
                                         _train_x,
                                         _train_y,
-                                        valid_x,
-                                        valid_y)
+                                        _test_x,
+                                        _test_y)
                         p_part.append(self._lgb_predict(lgb_name, _test_x, self.use_prob))
                         y_index.append(_test_index.reshape((-1, 1)))
-                        if valid_x is not None:
-                            p = self._lgb_predict(lgb_name, valid_x, self.use_prob)
-                            v_part.append(p)
 
                 else:  # sklearn
                     for _i, (_train_index, _test_index) in enumerate(self.split.split(train_x, train_y)):
@@ -162,32 +155,24 @@ class Stacking(object):
                         p = self._sklearn_predict(model, _test_x, self.use_prob)
                         p_part.append(p)
                         y_index.append(_test_index.reshape((-1, 1)))
-                        if valid_x is not None:
-                            p = self._sklearn_predict(model, valid_x, self.use_prob)
-                            v_part.append(p)
-                print p_part[0].shape, p_part[1].shape
                 p_part = np.vstack(p_part)
                 y_index = np.vstack(y_index)
                 p = dict(zip(list(y_index.reshape((-1,))), list(p_part)))
                 p_rs.append(np.vstack(p.values()))
-                if valid_x is not None:
-                    v_rs.append(np.mean(np.stack(v_part, axis=2), axis=2))
 
         new_train = np.hstack(p_rs)
 
-        if valid_x is not None:
-            valid_x = np.hstack(v_rs)
+        if self.use_feature_in_secondary:
+            new_train = np.concatenate([new_train, train_x],axis=1)
+
 
         assert new_train.shape[0] == train_y.shape[0]
-        if valid_x is not None:
-            assert valid_x.shape[0] == valid_y.shape[0]
-            assert new_train.shape[1] == valid_x.shape[1]
 
         # 次学习其
-        if self.meta_cls[0].startswith("lgb"):
-            self._lgb_train(self.meta_cls, new_train, train_y, valid_x, valid_y)
-        else:
-            self.meta_cls[1].fit(new_train, train_y)
+        # if self.meta_cls[0].startswith("lgb"):
+        #     self._lgb_train(self.meta_cls, new_train, train_y)
+        # else:
+        self.meta_cls[1].fit(new_train, train_y)
 
     def predict(self, test_x):
         p_rs = []
@@ -217,11 +202,11 @@ class Stacking(object):
                 p_rs.append(np.mean(np.stack(p_part, axis=2), axis=2))
 
         new_train = np.hstack(p_rs)
+        if self.use_feature_in_secondary:
+            new_train = np.concatenate([new_train, test_x],axis=1)
         # 次学习器
         if self.meta_cls[0].startswith("lgb"):
             p = self._lgb_predict(self.meta_cls[0], new_train)
         else:
             p = self._sklearn_predict(self.meta_cls[1], new_train)
         return p.reshape((-1,))
-
-
